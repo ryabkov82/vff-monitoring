@@ -1,0 +1,71 @@
+version: "3.9"
+services:
+  prometheus:
+    image: "{{ prometheus_image }}"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.external-url={{ external_url_prometheus }}"
+    volumes:
+      - "{{ monitoring_root }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "{{ monitoring_root }}/prometheus/rules:/etc/prometheus/rules:ro"
+      - "{{ monitoring_root }}/prometheus/targets:/etc/prometheus/targets:ro"
+      - "prom_data:/prometheus"
+    network_mode: host
+    restart: unless-stopped
+
+  alertmanager:
+    image: "{{ alertmanager_image }}"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.external-url={{ external_url_alerts }}"
+    volumes:
+      - "{{ monitoring_root }}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
+      - "am_data:/alertmanager"
+    network_mode: host
+    restart: unless-stopped
+
+  blackbox:
+    image: "{{ blackbox_image }}"
+    volumes:
+      - "{{ monitoring_root }}/blackbox:/etc/blackbox_exporter:ro"
+    command: ["--config.file=/etc/blackbox_exporter/blackbox.yml"]
+    network_mode: host
+    restart: unless-stopped
+
+  grafana:
+    image: "{{ grafana_image }}"
+    environment:
+      - GF_SECURITY_ADMIN_USER={{ grafana_admin_user }}
+      - GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}
+    volumes:
+      - "graf_data:/var/lib/grafana"
+    network_mode: host
+    restart: unless-stopped
+
+{% if marzban_exporter_enabled | bool %}
+  marzban-exporter:
+    image: "{{ marzban_exporter_image }}"
+    restart: unless-stopped
+    environment:
+      MARZBAN_BASE_URL: "{{ marzban_base_url }}"
+      MARZBAN_USERNAME: "{{ MARZBAN_USERNAME }}"
+      MARZBAN_PASSWORD: "{{ MARZBAN_PASSWORD }}"
+      UPDATE_INTERVAL: "{{ marzban_update_interval }}"
+      METRICS_PORT: "{{ marzban_exporter_metrics_port }}"
+      METRICS_PROTECTED: "{{ 'true' if marzban_exporter_protected else 'false' }}"
+      METRICS_USERNAME: "{{ EXPORTER_METRICS_USER }}"
+      METRICS_PASSWORD: "{{ EXPORTER_METRICS_PASS }}"
+    ports:
+      - "127.0.0.1:{{ marzban_exporter_bind_port }}:{{ marzban_exporter_metrics_port }}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ marzban_exporter_metrics_port }}/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+{% endif %}
+  
+volumes:
+  prom_data: {}
+  am_data: {}
+  graf_data: {}

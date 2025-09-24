@@ -1,0 +1,63 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:{{ alertmanager_port }}"]
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["127.0.0.1:{{ prometheus_port }}"]
+
+  - job_name: "node"
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/nodes.json"]
+
+  - job_name: "blackbox_icmp"
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/bb-icmp.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: instance
+        source_labels: [__param_target]
+      - target_label: __address__
+        replacement: 127.0.0.1:{{ blackbox_port }}
+
+  - job_name: "blackbox_tcp443"
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/bb-tcp443.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: instance
+        source_labels: [__param_target]
+      - target_label: __address__
+        replacement: 127.0.0.1:{{ blackbox_port }}
+
+{% if marzban_exporter_enabled | bool %}
+  - job_name: "marzban_exporter"
+    scheme: http
+    static_configs:
+      - targets:
+          - "127.0.0.1:{{ marzban_exporter_bind_port }}"
+        labels:
+          instance: "marzban-s2"
+{% if marzban_exporter_protected | bool %}
+    basic_auth:
+      username: "{{ EXPORTER_METRICS_USER }}"
+      password: "{{ EXPORTER_METRICS_PASS }}"
+{% endif %}
+{% endif %}
+  

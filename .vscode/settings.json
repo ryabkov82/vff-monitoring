@@ -1,0 +1,14 @@
+{
+    "yaml.schemaStore.enable": false,
+    "yaml.schemas": {
+      "./.vscode/schemas/ansible/vars.json": [
+        "ansible/group_vars/**/*.yml",
+        "ansible/host_vars/**/*.yml"
+      ]
+    },
+    "yaml.customTags": [
+      "!vault",
+      "!vault scalar",
+      "!vault mapping"
+    ]    
+}

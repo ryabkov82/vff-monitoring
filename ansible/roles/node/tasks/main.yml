@@ -1,0 +1,14 @@
+---
+- name: Install deps
+  ansible.builtin.package:
+    name: [curl, jq]
+    state: present
+
+- name: Deploy scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/bin/{{ item | basename }}"
+    mode: "0755"
+  loop:
+    - speedtest_textfile_ookla.sh
+    - reality_svc_health.sh

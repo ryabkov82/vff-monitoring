@@ -1,0 +1,15 @@
+groups:
+- name: rec-network
+  rules:
+  - record: node:bps:rx
+    expr: |
+      8 * sum by (instance, name, role) (
+        (rate(node_network_receive_bytes_total[1m])
+         and on (instance, device) max by (instance, device) (if_speed_bps))
+      )
+  - record: node:bps:tx
+    expr: |
+      8 * sum by (instance, name, role) (
+        (rate(node_network_transmit_bytes_total[1m])
+         and on (instance, device) max by (instance, device) (if_speed_bps))
+      )

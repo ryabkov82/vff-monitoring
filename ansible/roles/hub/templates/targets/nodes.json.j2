@@ -1,0 +1,5 @@
+[
+{% for n in vpn_nodes %}
+  { "targets": ["{{ n.instance }}"], "labels": { "name": "{{ n.name }}", "role": "{{ n.role }}" } }{% if not loop.last %},{% endif %}
+{% endfor %}
+]

@@ -1,0 +1,4 @@
+---
+- name: New group membership notice
+  ansible.builtin.debug:
+    msg: "Пользователям {{ docker_users | join(', ') }} нужно перелогиниться (или 'newgrp docker'), чтобы группа docker подхватилась."

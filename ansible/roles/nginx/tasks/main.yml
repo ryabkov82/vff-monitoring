@@ -1,0 +1,146 @@
+---
+- name: Install nginx and deps
+  ansible.builtin.apt:
+    name: [nginx, apache2-utils, ssl-cert]
+    state: present
+    update_cache: true
+  tags: [nginx]
+
+- name: Ensure key dirs exist
+  tags: [nginx]
+  block:
+    - name: Ensure conf.d exists (for http extras)
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Ensure sites-{available,enabled} dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ nginx_sites_available_dir }}"
+        - "{{ nginx_sites_enabled_dir }}"
+
+    - name: Ensure webroot for ACME challenges exists
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        mode: "0755"
+
+- name: Drop http{} extras (rate limit zone)
+  ansible.builtin.template:
+    src: nginx.conf.d.http.j2
+    dest: /etc/nginx/conf.d/00-http-extras.conf
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Reload nginx
+  tags: [nginx]
+
+- name: Install passlib for htpasswd
+  ansible.builtin.apt:
+    name: python3-passlib
+    state: present
+    update_cache: true
+  when: ansible_facts.os_family == 'Debian'
+  tags: [nginx]
+
+- name: Ensure basic auth file (if enabled)
+  when: nginx_basic_auth_enabled | bool
+  tags: [nginx]
+  block:
+    - name: Create empty htpasswd if missing
+      ansible.builtin.file:
+        path: /etc/nginx/.htpasswd
+        state: touch
+        mode: "0640"
+        owner: root
+        group: www-data
+
+    - name: Ensure users in htpasswd
+      no_log: false
+      community.general.htpasswd:
+        path: /etc/nginx/.htpasswd
+        name: "{{ item.user }}"
+        password: "{{ nginx_passwords[item.user] | default(item.pass) }}"
+        state: present
+        crypt_scheme: md5_crypt
+        mode: "0640"
+        owner: root
+        group: www-data
+      loop: "{{ nginx_users }}"
+
+- name: Render per-site vhosts into sites-available
+  vars:
+    vhosts:
+      - name: prom
+        server_name: "{{ prom_domain }}"
+        backend: "127.0.0.1:{{ prometheus_port }}"
+        basic_desc: "Prometheus"
+        block_admin_paths: '^/(api/v[12]/admin|-/reload)'
+      - name: grafana
+        server_name: "{{ grafana_domain }}"
+        backend: "127.0.0.1:{{ grafana_port }}"
+        basic_desc: "Grafana"
+        block_admin_paths: '^/api/admin'
+      - name: alerts
+        server_name: "{{ alerts_domain }}"
+        backend: "127.0.0.1:{{ alertmanager_port }}"
+        basic_desc: "Alertmanager"
+        block_admin_paths: '^/(api/v2/alerts|api/v2/silences)/(?:DELETE|PUT)$'
+  ansible.builtin.template:
+    src: site.conf.j2
+    dest: "{{ nginx_sites_available_dir }}/{{ item.name }}.conf"
+    mode: "0644"
+    owner: root
+    group: root
+  loop: "{{ vhosts }}"
+  notify: Reload nginx
+  tags: [nginx]
+
+- name: Enable sites by symlink
+  ansible.builtin.file:
+    src: "{{ nginx_sites_available_dir }}/{{ item.name }}.conf"
+    dest: "{{ nginx_sites_enabled_dir }}/{{ item.name }}.conf"
+    state: link
+    owner: root
+    group: root
+  loop:
+    - { name: "prom" }
+    - { name: "grafana" }
+    - { name: "alerts" }
+  notify: Reload nginx
+  tags: [nginx]
+
+- name: Obtain/renew certs with certbot (HTTP-01)
+  when: nginx_cert_method == 'certbot'
+  tags: [nginx, certs]
+  block:
+    - name: Install certbot
+      ansible.builtin.apt:
+        name: [certbot, python3-certbot-nginx]
+        state: present
+        update_cache: true
+    - name: Run certbot for all hosts
+      ansible.builtin.command: >
+        certbot certonly --webroot -w /var/www/html
+        -d {{ item }}
+        --agree-tos -m {{ certbot_email }}
+        {{ '--staging' if certbot_staging else '' }}
+        --non-interactive --quiet
+      loop:
+        - "{{ prom_domain }}"
+        - "{{ grafana_domain }}"
+        - "{{ alerts_domain }}"
+      register: certbot_out
+      changed_when: "'Congratulations' in certbot_out.stdout or 'Congratulations' in certbot_out.stderr"
+
+- name: Ensure nginx enabled and started
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+  tags: [nginx]
