@@ -1,0 +1,5 @@
+[
+{% for t in blackbox_icmp_targets %}
+  { "targets": ["{{ t }}"] }{% if not loop.last %},{% endif %}
+{% endfor %}
+]

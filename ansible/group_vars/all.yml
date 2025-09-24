@@ -1,0 +1,56 @@
+docker_install: true
+# кого добавить в группу docker (можно пустой список)
+docker_users: []
+
+# Общие версии контейнеров
+prometheus_image: prom/prometheus:v2.55.1
+alertmanager_image: prom/alertmanager:v0.27.0
+grafana_image: grafana/grafana:10.4.5
+blackbox_image: prom/blackbox-exporter:v0.25.0
+node_exporter_version: "1.8.2"
+
+# Порты и пути
+monitoring_root: /opt/vff-monitoring
+prometheus_port: 9090
+alertmanager_port: 9093
+grafana_port: 3000
+blackbox_port: 9115
+
+# VPN узлы (источник для targets/*.json.j2)
+vpn_nodes:
+  - name: "NL-1"
+    instance: "10.66.0.2:9100"
+    role: "vpn"
+  # - name: "DE-1"
+  #   instance: "10.66.0.3:9100"
+  #   role: "vpn"
+
+# Blackbox цели
+blackbox_icmp_targets:
+  - "10.66.0.2"
+blackbox_tcp443_targets:
+  - "10.66.0.2:443"
+
+# RU-проба (если выполняем на хабе)
+ru_probe_enabled: true
+ru_probe_schedule_hours: [3,9,15,21]
+ru_probe_random_delay_sec: 900
+
+# Marzban exporter
+marzban_exporter_enabled: true
+marzban_exporter_image: "kutovoys/marzban-exporter:latest"
+
+# где находится панель Marzban
+marzban_base_url: "https://marzban-s2.vpn-for-friends.com:4443"
+
+# частота опроса панели (сек)
+marzban_update_interval: 30
+
+# внутри контейнера экспортер слушает этот порт (не меняй без необходимости)
+marzban_exporter_metrics_port: 9090
+
+# на хосте будем публиковать как 127.0.0.1:<bind_port> (без host networking)
+marzban_exporter_bind_port: 9205
+
+# basic auth на /metrics у экспортера
+marzban_exporter_protected: true

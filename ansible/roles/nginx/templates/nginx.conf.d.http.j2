@@ -1,0 +1,2 @@
+# http{} extras (included from /etc/nginx/nginx.conf via conf.d)
+limit_req_zone $binary_remote_addr zone=prom_rate:10m rate=10r/s;

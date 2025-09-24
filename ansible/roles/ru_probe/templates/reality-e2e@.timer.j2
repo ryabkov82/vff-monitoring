@@ -1,0 +1,10 @@
+[Unit]
+Description=Run RU iperf3 probe hourly with jitter (%i)
+
+[Timer]
+OnCalendar=*-*-* %i:00:00
+RandomizedDelaySec={{ ru_probe_random_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
