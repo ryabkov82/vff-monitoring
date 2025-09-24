@@ -1,0 +1,12 @@
+groups:
+- name: alerts-wireguard
+  rules:
+  - alert: WGPeerDown
+    expr: wg:peer:connected == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "WireGuard peer appears down"
+      description: >-
+        {% raw %}Peer on {{ $labels.instance }} has not been connected for 5m.{% endraw %}

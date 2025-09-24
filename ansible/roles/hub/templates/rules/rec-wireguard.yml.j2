@@ -1,0 +1,7 @@
+groups:
+- name: rec-wireguard
+  rules:
+  - record: wg:peer:connected
+    expr: max by (peer, instance) (wg_peer_connected) or on() vector(0)
+  - record: wg:peer:handshake_age_seconds
+    expr: max by (peer, instance) (wg_peer_latest_handshake_seconds_ago)

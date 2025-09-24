@@ -1,0 +1,9 @@
+groups:
+- name: rec-ru-probe
+  rules:
+  - record: ru:wg:throughput_up_bps
+    expr: max by (name) (ru_probe_throughput_bps{direction="uplink"})
+  - record: ru:wg:throughput_down_bps
+    expr: max by (name) (ru_probe_throughput_bps{direction="downlink"})
+  - record: ru:wg:last_run_age_seconds
+    expr: max by (name) (ru_probe_last_run_timestamp_seconds != 0)

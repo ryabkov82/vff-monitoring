@@ -1,0 +1,26 @@
+---
+- name: Install systemd units for RU probe
+  when: ru_probe_enabled | bool
+  ansible.builtin.template:
+    src: "reality-e2e@.service.j2"
+    dest: "/etc/systemd/system/reality-e2e@.service"
+    mode: "0644"
+  notify: Systemd daemon-reload
+
+- name: Install timer
+  when: ru_probe_enabled | bool
+  ansible.builtin.template:
+    src: "reality-e2e@.timer.j2"
+    dest: "/etc/systemd/system/reality-e2e@.timer"
+    mode: "0644"
+  notify: Systemd daemon-reload
+
+- name: Ensure RU-probe timers are enabled and started
+  when: ru_probe_enabled | bool
+  ansible.builtin.systemd:
+    name: "reality-e2e@{{ item }}.timer"
+    enabled: true
+    state: started
+  loop: "{{ ru_probe_schedule_hours | unique | sort }}"
+  loop_control:
+    label: "reality-e2e@{{ item }}.timer"

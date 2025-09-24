@@ -1,0 +1,5 @@
+[
+{% for t in blackbox_tcp443_targets %}
+  { "targets": ["{{ t }}"] }{% if not loop.last %},{% endif %}
+{% endfor %}
+]
