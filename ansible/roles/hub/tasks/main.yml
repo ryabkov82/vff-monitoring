@@ -12,20 +12,23 @@
     - grafana
     - blackbox
 
+# prometheus.yml → reload Prometheus
 - name: Render Prometheus config
   ansible.builtin.template:
     src: prometheus.yml.j2
     dest: "{{ monitoring_root }}/prometheus/prometheus.yml"
     mode: "0644"
-  notify: Restart stack
+  notify: Prometheus reload
 
+# alertmanager.yml → reload Alertmanager
 - name: Render Alertmanager config
   ansible.builtin.template:
     src: alerts.yml.j2
     dest: "{{ monitoring_root }}/alertmanager/alertmanager.yml"
     mode: "0644"
-  notify: Restart stack
+  notify: Alertmanager reload
 
+# Rules/targets → reload Prometheus
 - name: Render rules
   ansible.builtin.template:
     src: "rules/{{ item }}.yml.j2"
@@ -37,7 +40,7 @@
     - rec-wireguard
     - rec-ru-probe
     - alerts-wireguard
-  notify: Restart stack
+  notify: Prometheus reload
 
 - name: Render targets (file_sd)
   ansible.builtin.template:
@@ -48,16 +51,69 @@
     - nodes
     - bb-icmp
     - bb-tcp443
-  notify: Restart stack
+  notify: Prometheus reload
 
+- name: Render blackbox config (if present)
+  ansible.builtin.template:
+    src: blackbox.yml.j2
+    dest: "{{ monitoring_root }}/blackbox/blackbox.yml"
+    mode: "0644"
+  notify:
+    - Restart services
+  vars:
+    services: ["blackbox"]
+
+# docker-compose.yml → безопасный рестарт нужных сервисов (можно всем)
 - name: Render docker-compose
   ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: "{{ monitoring_root }}/docker-compose.yml"
     mode: "0644"
+  notify:
+    - Restart services
+  vars:
+    # Простой вариант: рестарт всего стека.
+    services: null
 
 - name: Ensure docker compose stack is up
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: present
-  notify: Restart stack
+
+- name: Wait for services to listen
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ item }}"
+    timeout: 60
+  loop:
+    - "{{ prometheus_port }}"
+    - "{{ alertmanager_port }}"
+    - "{{ grafana_port }}"
+    - "{{ blackbox_port }}"
+
+- name: Check Prometheus ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/ready"
+    status_code: 200
+    return_content: false
+
+- name: Check Alertmanager ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ alertmanager_port }}/-/ready"
+    status_code: 200
+    return_content: false
+
+- name: Check Grafana health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+    url_username: "{{ grafana_admin_user }}"
+    url_password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    status_code: 200
+    return_content: false
+
+- name: Check Blackbox responds
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ blackbox_port }}/metrics"
+    status_code: 200
+    return_content: false

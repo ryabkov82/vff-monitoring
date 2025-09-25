@@ -2,6 +2,7 @@
 - name: Hub (monitoring server)
   hosts: hub
   roles:
+    - { role: wireguard_hub, tags: [wg, wg_hub] }
     - { role: docker, when: docker_install | bool, tags: [docker] }   # установка Docker/Compose
     - { role: nginx, tags: [nginx] }    # reverse-proxy, certs, htpasswd
     - { role: hub, tags: [hub] }
@@ -10,4 +11,5 @@
 - name: VPN nodes
   hosts: vpn
   roles:
-    - node
+    - { role: wireguard_node, tags: [wg, wg_node] }
+    - { role: node, tags: [node] }
