@@ -1,0 +1,126 @@
+---
+- name: Configure WireGuard hub
+  tags: [wg]
+  block:
+
+    - name: Install wireguard tools
+      ansible.builtin.apt:
+        name: [wireguard, wireguard-tools]
+        state: present
+        update_cache: true
+      when: ansible_facts.pkg_mgr == 'apt'
+
+    - name: Ensure /etc/wireguard exists
+      ansible.builtin.file:
+        path: /etc/wireguard
+        state: directory
+        mode: "0750"
+        owner: root
+        group: root
+
+    # --- Сценарий A: приватный ключ задан в vars/vault ---
+    - name: Write hub private key from vars (if provided)
+      ansible.builtin.copy:
+        dest: "/etc/wireguard/{{ wg_iface }}.key"
+        mode: "0600"
+        owner: root
+        group: root
+        content: "{{ hub_wg_private_key }}"
+      when: hub_wg_private_key is defined and (hub_wg_private_key | length) > 0
+      no_log: true
+
+    - name: Compute hub public key from provided private key (once)
+      ansible.builtin.shell: "wg pubkey < /etc/wireguard/{{ wg_iface }}.key > /etc/wireguard/{{ wg_iface }}.pub"
+      args:
+        creates: "/etc/wireguard/{{ wg_iface }}.pub"
+        executable: /bin/bash
+      when: hub_wg_private_key is defined and (hub_wg_private_key | length) > 0
+
+    # --- Сценарий B: ключ не задан — генерируем пару идемпотентно ---
+    - name: Generate hub keypair if missing (private+public)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        umask 077
+        wg genkey | tee /etc/wireguard/{{ wg_iface }}.key | wg pubkey > /etc/wireguard/{{ wg_iface }}.pub
+      args:
+        creates: "/etc/wireguard/{{ wg_iface }}.key"
+        executable: /bin/bash
+      when: hub_wg_private_key is not defined or (hub_wg_private_key | length) == 0
+      no_log: true
+
+    - name: Ensure key files permissions
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
+        owner: root
+        group: root
+      loop:
+        - { path: "/etc/wireguard/{{ wg_iface }}.key", mode: "0600" }
+        - { path: "/etc/wireguard/{{ wg_iface }}.pub", mode: "0644" }
+
+    # Прочитать приватный ключ с удалённого хоста → факт для шаблона
+    - name: Slurp hub private key (remote)
+      ansible.builtin.slurp:
+        src: "/etc/wireguard/{{ wg_iface }}.key"
+      register: hub_priv_raw
+      no_log: true
+
+    - name: Set fact with hub private key
+      ansible.builtin.set_fact:
+        hub_wg_privkey_runtime: "{{ hub_priv_raw.content | b64decode | trim }}"
+      no_log: true
+
+    # === Автосбор pubkey'ев узлов ===
+    - name: Collect node pubkeys from vpn hosts (if any)
+      when: groups['vpn'] is defined and (groups['vpn'] | length) > 0
+      ansible.builtin.slurp:
+        src: "/etc/wireguard/{{ wg_iface }}.pub"
+      register: vpn_pubs
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['vpn'] | default([]) }}"
+      ignore_errors: true
+
+    - name: Build map host -> pubkey (vpn_pubmap)
+      when: vpn_pubs is defined
+      ansible.builtin.set_fact:
+        vpn_pubmap: >-
+          {{
+            dict(
+              vpn_pubs.results
+              | selectattr('content', 'defined')
+              | map(attribute='item')
+              | zip(
+                  vpn_pubs.results
+                  | selectattr('content', 'defined')
+                  | map(attribute='content')
+                  | map('b64decode')
+                  | map('trim')
+                )
+            )
+          }}
+
+    - name: Render hub config
+      ansible.builtin.template:
+        src: wg-hub.conf.j2
+        dest: "/etc/wireguard/{{ wg_iface }}.conf"
+        mode: "0600"
+      notify: Restart wg-quick
+
+    - name: Detect ufw presence
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: ufw_present
+
+    - name: Allow WireGuard UDP port in ufw (if present)
+      community.general.ufw:
+        rule: allow
+        proto: udp
+        port: "{{ wg_listen_port }}"
+        comment: "WireGuard {{ wg_iface }}"
+      when: ufw_present.stat.exists
+
+    - name: Enable + start wg interface
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ wg_iface }}"
+        enabled: true
+        state: started

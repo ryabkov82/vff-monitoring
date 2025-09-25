@@ -1,0 +1,12 @@
+modules:
+  icmp:
+    prober: icmp
+    timeout: {{ blackbox_icmp_timeout | default('5s') }}
+    icmp:
+      preferred_ip_protocol: {{ blackbox_icmp_proto | default('ip4') }}
+
+  tcp_connect:
+    prober: tcp
+    timeout: {{ blackbox_tcp_timeout | default('5s') }}
+    tcp:
+      preferred_ip_protocol: {{ blackbox_tcp_proto | default('ip4') }}
