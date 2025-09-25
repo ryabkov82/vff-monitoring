@@ -1,5 +1,47 @@
 ---
-- name: Restart stack
+# Универсальный рестарт сервиса(ов) через compose v2
+- name: Restart services
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: restarted
+    services: "{{ services | default(omit, true) }}"
+
+# Горячий reload Prometheus с запасным рестартом
+- name: Prometheus reload
+  block:
+    - name: POST /-/reload to Prometheus
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ prometheus_port }}/-/reload"
+        method: POST
+        status_code: 200
+        return_content: false
+      register: prom_reload
+      retries: 3
+      delay: 2
+      until: prom_reload.status == 200
+  rescue:
+    - name: Fallback restart Prometheus
+      community.docker.docker_compose_v2:
+        project_src: "{{ monitoring_root }}"
+        state: restarted
+        services: ["prometheus"]
+
+# Горячий reload Alertmanager с запасным рестартом
+- name: Alertmanager reload
+  block:
+    - name: POST /-/reload to Alertmanager
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ alertmanager_port }}/-/reload"
+        method: POST
+        status_code: 200
+        return_content: false
+      register: am_reload
+      retries: 3
+      delay: 2
+      until: am_reload.status == 200
+  rescue:
+    - name: Fallback restart Alertmanager
+      community.docker.docker_compose_v2:
+        project_src: "{{ monitoring_root }}"
+        state: restarted
+        services: ["alertmanager"]

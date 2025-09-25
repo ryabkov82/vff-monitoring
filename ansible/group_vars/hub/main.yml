@@ -18,6 +18,8 @@ prometheus_port: 9090
 grafana_port:    3000
 alertmanager_port: 9093
 
+hub_wg_pubkey: "{{ lookup('file', '/etc/wireguard/{{ wg_iface }}.pub') | default('', true) }}"
+
 # Basic auth (лучше держать в vault)
 nginx_basic_auth_enabled: true
 nginx_users:
