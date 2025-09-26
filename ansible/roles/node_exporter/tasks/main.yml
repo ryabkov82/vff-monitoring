@@ -1,0 +1,131 @@
+---
+- name: Derive wg_ip from vpn_nodes by inventory_hostname (if not set)
+  ansible.builtin.set_fact:
+    wg_ip: >-
+      {{ (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | first).wg_ip }}
+  when:
+    - wg_ip is not defined
+    - vpn_nodes is defined
+    - (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | length) > 0
+
+- name: Install and run node_exporter (single @instance on WG IP)
+  tags: [node_exporter]
+  block:
+    - name: Assert wg_ip is defined and valid
+      ansible.builtin.assert:
+        that:
+          - wg_ip is defined
+          - (wg_ip | ansible.utils.ipaddr) is not none
+        fail_msg: "wg_ip не задан/некорректен для {{ inventory_hostname }}"
+
+    - name: Ensure node_exporter system user
+      ansible.builtin.user:
+        name: node_exporter
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Ensure textfile directory exists
+      ansible.builtin.file:
+        path: "{{ node_exporter_textfile_dir }}"
+        state: directory
+        owner: node_exporter
+        group: node_exporter
+        mode: "0755"
+
+    # 0) Есть ли бинарь вообще?
+    - name: Check node_exporter binary presence
+      ansible.builtin.stat:
+        path: "{{ node_exporter_bin_dir }}/node_exporter"
+      register: ne_stat
+      changed_when: false
+
+    # 1) Прочитать версию только если бинарь есть
+    - name: Read installed node_exporter version (no shell)
+      ansible.builtin.command: "{{ node_exporter_bin_dir }}/node_exporter --version"
+      register: ne_ver
+      changed_when: false
+      failed_when: false
+      when: ne_stat.stat.exists
+
+    - name: Combine stdout+stderr for parsing
+      ansible.builtin.set_fact:
+        ne_ver_combined: "{{ (ne_ver.stdout | default('')) ~ '\n' ~ (ne_ver.stderr | default('')) }}"
+      when: ne_stat.stat.exists
+
+    - name: Parse existing version robustly
+      ansible.builtin.set_fact:
+        node_exporter_installed_version: "{{ (ne_ver_combined | regex_findall('version\\s+([0-9][^\\s]*)')) | first | default('') }}"
+      when: ne_stat.stat.exists
+
+    - name: Debug installed vs desired versions
+      ansible.builtin.debug:
+        msg: "installed={{ node_exporter_installed_version | default('') }}, desired={{ node_exporter_version }}"
+
+    # Устанавливаем/обновляем только если версии нет или она отличается
+    - name: Install/Update node_exporter from tarball
+      when: node_exporter_installed_version | default('') != node_exporter_version
+      block:
+        - name: Download node_exporter archive
+          ansible.builtin.get_url:
+            url: >-
+              {{
+                'https://github.com/prometheus/node_exporter/releases/download/v'
+                ~ node_exporter_version
+                ~ '/node_exporter-'
+                ~ node_exporter_version
+                ~ '.'
+                ~ node_exporter_arch
+                ~ '.tar.gz'
+              }}
+            dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+            mode: "0644"
+          register: dl_ne
+
+        - name: Unpack node_exporter
+          ansible.builtin.unarchive:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+            dest: "/tmp"
+            remote_src: true
+            creates: "/tmp/node_exporter-{{ node_exporter_version }}.{{ node_exporter_arch }}/node_exporter"
+
+        - name: Install node_exporter binary
+          ansible.builtin.copy:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.{{ node_exporter_arch }}/node_exporter"
+            dest: "{{ node_exporter_bin_dir }}/node_exporter"
+            owner: root
+            group: root
+            mode: "0755"
+            remote_src: true
+          notify: Restart node_exporter instance
+
+    - name: Deploy templated systemd unit (@instance)
+      ansible.builtin.template:
+        src: node_exporter@.service.j2
+        dest: /etc/systemd/system/node_exporter@.service
+        mode: "0644"
+      notify: Restart node_exporter instance
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start node_exporter@{{ node_exporter_listen }}
+      ansible.builtin.systemd:
+        name: "node_exporter@{{ node_exporter_listen }}"
+        enabled: true
+        state: started
+
+    - name: Detect ufw presence
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: ufw_present
+
+    - name: Allow node_exporter from WG subnet via ufw
+      when: ufw_present.stat.exists
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ node_exporter_port }}"
+        from_ip: "{{ (wg_ip | regex_replace('\\.\\d+$', '.0')) }}/24"
+        comment: "node_exporter @{{ node_exporter_listen }}"
