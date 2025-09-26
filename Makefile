@@ -136,3 +136,17 @@ ifndef HOST
 endif
 	@$(MAKE) add-node HOST=$(HOST) $(if $(ANSIBLE_FLAGS),ANSIBLE_FLAGS=$(ANSIBLE_FLAGS))
 	@$(MAKE) add-node-check HOST=$(HOST) $(if $(WG_IP),WG_IP=$(WG_IP)) $(if $(NODE_PORT),NODE_PORT=$(NODE_PORT)) $(if $(ANSIBLE_FLAGS),ANSIBLE_FLAGS=$(ANSIBLE_FLAGS))
+
+.PHONY: node-exporter node-exporter-vpn
+
+# Установить/обновить node_exporter на одном узле
+# Пример: make node-exporter HOST=nl-ams-1
+node-exporter:
+ifndef HOST
+	$(error Usage: make node-exporter HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_exporter $(ANSIBLE_FLAGS)
+
+# Прогнать node_exporter на всей группе vpn
+node-exporter-vpn:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_exporter $(ANSIBLE_FLAGS)

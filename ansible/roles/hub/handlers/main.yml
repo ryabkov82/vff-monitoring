@@ -1,47 +1,52 @@
 ---
-# Универсальный рестарт сервиса(ов) через compose v2
+# Рестарт через compose v2 (всего стека или указанных services)
 - name: Restart services
+  listen: Restart services
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: restarted
     services: "{{ services | default(omit, true) }}"
 
-# Горячий reload Prometheus с запасным рестартом
-- name: Prometheus reload
-  block:
-    - name: POST /-/reload to Prometheus
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ prometheus_port }}/-/reload"
-        method: POST
-        status_code: 200
-        return_content: false
-      register: prom_reload
-      retries: 3
-      delay: 2
-      until: prom_reload.status == 200
-  rescue:
-    - name: Fallback restart Prometheus
-      community.docker.docker_compose_v2:
-        project_src: "{{ monitoring_root }}"
-        state: restarted
-        services: ["prometheus"]
+# ===== Prometheus =====
+- name: Prometheus HTTP reload
+  listen: Prometheus reload
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/reload"
+    method: POST
+    status_code: 200
+    return_content: false
+  register: prom_reload
+  failed_when: false
+  retries: 3
+  delay: 2
+  until: prom_reload.status == 200
 
-# Горячий reload Alertmanager с запасным рестартом
-- name: Alertmanager reload
-  block:
-    - name: POST /-/reload to Alertmanager
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ alertmanager_port }}/-/reload"
-        method: POST
-        status_code: 200
-        return_content: false
-      register: am_reload
-      retries: 3
-      delay: 2
-      until: am_reload.status == 200
-  rescue:
-    - name: Fallback restart Alertmanager
-      community.docker.docker_compose_v2:
-        project_src: "{{ monitoring_root }}"
-        state: restarted
-        services: ["alertmanager"]
+- name: Fallback restart Prometheus
+  listen: Prometheus reload
+  when: prom_reload.status is not defined or prom_reload.status != 200
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    state: restarted
+    services: ["prometheus"]
+
+# ===== Alertmanager =====
+- name: Alertmanager HTTP reload
+  listen: Alertmanager reload
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ alertmanager_port }}/-/reload"
+    method: POST
+    status_code: 200
+    return_content: false
+  register: am_reload
+  failed_when: false
+  retries: 3
+  delay: 2
+  until: am_reload.status == 200
+
+- name: Fallback restart Alertmanager
+  listen: Alertmanager reload
+  when: am_reload.status is not defined or am_reload.status != 200
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    state: restarted
+    services: ["alertmanager"]

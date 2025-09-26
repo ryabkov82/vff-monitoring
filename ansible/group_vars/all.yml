@@ -36,9 +36,9 @@ vpn_nodes:
 
 # Blackbox цели
 blackbox_icmp_targets:
-  - "10.66.0.2"
+  - "10.77.0.2"
 blackbox_tcp443_targets:
-  - "10.66.0.2:443"
+  - "10.77.0.2:443"
 
 # RU-проба (если выполняем на хабе)
 ru_probe_enabled: true
