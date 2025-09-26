@@ -25,12 +25,23 @@ scrape_configs:
     file_sd_configs:
       - files: ["/etc/prometheus/targets/bb-icmp.json"]
     relabel_configs:
+      # host (из file_sd) -> param target
       - source_labels: [__address__]
         target_label: __param_target
-      - target_label: instance
-        source_labels: [__param_target]
+
+      # instance = host (как есть)
+      - source_labels: [__param_target]
+        target_label: instance
+
+      # отправляем сам пробер на blackbox_exporter
       - target_label: __address__
         replacement: 127.0.0.1:{{ blackbox_port }}
+
+      # (опционально) удобная метка без порта
+      - source_labels: [__param_target]
+        regex: '^(.*?)(?::\d+)?$'
+        replacement: '$1'
+        target_label: target_host
 
   - job_name: "blackbox_tcp443"
     metrics_path: /probe
@@ -45,6 +56,11 @@ scrape_configs:
         source_labels: [__param_target]
       - target_label: __address__
         replacement: 127.0.0.1:{{ blackbox_port }}
+      # дополнительно метка без порта для унификации и графан-переменных
+      - source_labels: [__param_target]
+        regex: '^(.*?)(?::\d+)?$'
+        replacement: '$1'
+        target_label: target_host
 
 {% if marzban_exporter_enabled | bool %}
   - job_name: "marzban_exporter"
@@ -60,4 +76,3 @@ scrape_configs:
       password: "{{ EXPORTER_METRICS_PASS }}"
 {% endif %}
 {% endif %}
-  

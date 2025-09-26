@@ -1,0 +1,18 @@
+[Unit]
+Description=Prometheus Node Exporter (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+ExecStart={{ node_exporter_bin_dir }}/node_exporter \
+  --web.listen-address=%i \
+  --collector.textfile.directory={{ node_exporter_textfile_dir }}
+Restart=always
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
