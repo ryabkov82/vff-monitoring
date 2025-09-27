@@ -46,3 +46,6 @@ nginx_certs:
 # Для certbot:
 certbot_email: "admin@vpn-for-friends.com"
 certbot_staging: false      # true — для теста
+
+# Поведение заливки дашбордов (rsync удаляет лишние файлы на целевом хосте)
+grafana_dashboards_use_rsync: true

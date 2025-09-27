@@ -1,0 +1,45 @@
+# Требует: доступ к Grafana API (как в grafana_token.yml), и наличие jq на контрол-ноде.
+
+- name: Grafana export | Ensure jq present on controller
+  ansible.builtin.command: "jq --version"
+  register: _jq_ver
+  changed_when: false
+  failed_when: _jq_ver.rc != 0
+  delegate_to: localhost
+  run_once: true
+  tags: [grafana_export]
+
+- name: Grafana export | Fetch dashboard list (search)
+  ansible.builtin.uri:
+    url: "{{ grafana_api_url }}/api/search?type=dash-db&limit={{ grafana_export_limit }}"
+    method: GET
+    headers: >-
+      {{
+        (grafana_admin_token | length > 0)
+          | ternary({'Authorization': 'Bearer ' ~ grafana_admin_token}, {})
+      }}
+    url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+    url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+    force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+    return_content: true
+    validate_certs: false
+  register: _search
+  tags: [grafana_export]
+
+- name: Grafana export | Build list of UIDs to export
+  ansible.builtin.set_fact:
+    grafana_export_uids_effective: >-
+      {{
+        (grafana_export_uids | default([]))
+        if (grafana_export_uids is defined and (grafana_export_uids | length > 0))
+        else (_search.json | map(attribute='uid') | select('!=', None))
+      }}
+  run_once: true
+  tags: [grafana_export]
+
+- name: Grafana export | Loop dashboards
+  ansible.builtin.include_tasks: grafana_export_one.yml
+  loop: "{{ grafana_export_uids_effective }}"
+  loop_control:
+    loop_var: uid
+  tags: [grafana_export]

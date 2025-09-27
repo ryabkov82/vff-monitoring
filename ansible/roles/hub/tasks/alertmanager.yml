@@ -1,0 +1,6 @@
+- name: Render Alertmanager config
+  ansible.builtin.template:
+    src: alerts.yml.j2
+    dest: "{{ monitoring_root }}/alertmanager/alertmanager.yml"
+    mode: "0644"
+  notify: Alertmanager reload

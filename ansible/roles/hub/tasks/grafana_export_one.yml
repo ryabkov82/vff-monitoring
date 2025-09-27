@@ -1,0 +1,98 @@
+# one uid in var "uid"
+
+- name: Grafana export | Fetch dashboard by UID
+  ansible.builtin.uri:
+    url: "{{ grafana_api_url }}/api/dashboards/uid/{{ uid }}"
+    method: GET
+    headers: >-
+      {{
+        (grafana_admin_token | length > 0)
+          | ternary({'Authorization': 'Bearer ' ~ grafana_admin_token}, {})
+      }}
+    url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+    url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+    force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+    return_content: true
+    validate_certs: false
+  register: _dash
+  tags: [grafana_export]
+
+- name: Grafana export | Compute folder & filename (sources)
+  ansible.builtin.set_fact:
+    _folder_src: "{{ _dash.json.meta.folderTitle | default('General') }}"
+    _file_src: "{{ _dash.json.dashboard.title }}"
+
+- name: Grafana export | Sanitize folder & filename
+  ansible.builtin.set_fact:
+    _folder: >-
+      {{
+        _folder_src
+        | regex_replace('/', '-')
+        | regex_replace('\\s+', '_')
+        | regex_replace('[^A-Za-z0-9._()\\-]', '_')
+      }}
+    _file_base: >-
+      {{
+        _file_src
+        | regex_replace('/', '-')
+        | regex_replace('\\s+', '_')
+        | regex_replace('[^A-Za-z0-9._()\\-]', '_')
+      }}
+
+- name: Grafana export | Build final filename
+  ansible.builtin.set_fact:
+    _file: "{{ _file_base }}.json"
+
+- name: Grafana export | Ensure folder exists on controller
+  ansible.builtin.file:
+    path: "{{ grafana_dash_dir }}/{{ _folder }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  run_once: false
+  tags: [grafana_export]
+
+- name: Grafana export | Write RAW JSON to temp
+  ansible.builtin.copy:
+    content: "{{ _dash.json | to_nice_json }}"
+    dest: "{{ grafana_dash_dir }}/{{ _folder }}/.{{ _file }}.raw"
+    mode: "0600"
+  delegate_to: localhost
+  run_once: false
+  tags: [grafana_export]
+
+# jq нормализует:
+# - .dashboard (вытянуть модель)
+# - del(.id)
+# - везде, где есть объект datasource {type:prometheus} -> "Prometheus"
+- name: Grafana export | Normalize JSON with jq
+  ansible.builtin.command: >
+    jq '{{ grafana_export_jq_filter }}'
+    "{{ grafana_dash_dir }}/{{ _folder }}/.{{ _file }}.raw"
+  register: _jq_out
+  changed_when: true
+  delegate_to: localhost
+  run_once: false
+  tags: [grafana_export]
+
+- name: Grafana export | Save normalized JSON
+  ansible.builtin.copy:
+    content: "{{ _jq_out.stdout }}"
+    dest: "{{ grafana_dash_dir }}/{{ _folder }}/{{ _file }}"
+    mode: "0644"
+  delegate_to: localhost
+  run_once: false
+  tags: [grafana_export]
+
+- name: Grafana export | Cleanup temp
+  ansible.builtin.file:
+    path: "{{ grafana_dash_dir }}/{{ _folder }}/.{{ _file }}.raw"
+    state: absent
+  delegate_to: localhost
+  run_once: false
+  tags: [grafana_export]
+
+- name: Grafana export | Report exported file
+  ansible.builtin.debug:
+    msg: "✓ exported: {{ grafana_dash_dir }}/{{ _folder }}/{{ _file }} (uid={{ uid }})"
+  tags: [grafana_export]

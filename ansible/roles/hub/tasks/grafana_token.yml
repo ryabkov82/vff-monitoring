@@ -1,0 +1,248 @@
+- name: Grafana token | Check local .env.grafana presence
+  ansible.builtin.stat:
+    path: "{{ grafana_env_file }}"
+  register: _env
+  delegate_to: localhost
+  run_once: true
+  tags: [grafana_token]
+
+- name: Grafana token | Decide whether creation is needed
+  ansible.builtin.set_fact:
+    _need_create_token: "{{ grafana_token_refresh or (not _env.stat.exists) }}"
+  run_once: true
+  tags: [grafana_token]
+
+- name: Grafana token | Probe service accounts API availability
+  when: _need_create_token
+  tags: [grafana_token]
+  block:
+    - name: Grafana token | Call /api/serviceaccounts/search?query=x
+      ansible.builtin.uri:
+        url: "{{ grafana_api_url }}/api/serviceaccounts/search?query=x"
+        method: GET
+        headers: >-
+          {{
+            (grafana_admin_token | length > 0)
+              | ternary({'Authorization': 'Bearer ' ~ grafana_admin_token}, {})
+          }}
+        url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+        url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+        force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+        status_code: [200, 401, 403, 404]
+        return_content: true
+        validate_certs: false
+      register: _sa_probe
+      no_log: true
+
+- name: Grafana token | Create service account and token (modern API)
+  when: _need_create_token and (_sa_probe.status | default(500)) == 200
+  tags: [grafana_token]
+  block:
+    - name: Grafana token | Search SA by name
+      ansible.builtin.uri:
+        url: "{{ grafana_api_url }}/api/serviceaccounts/search?query={{ grafana_sa_name | urlencode }}"
+        method: GET
+        headers: >-
+          {{
+            (grafana_admin_token | length > 0)
+              | ternary({'Authorization': 'Bearer ' ~ grafana_admin_token}, {})
+          }}
+        url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+        url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+        force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+        return_content: true
+        validate_certs: false
+      register: _sa_search
+      no_log: true
+
+    - name: Grafana token | Compute SA existence flag
+      ansible.builtin.set_fact:
+        _sa_exists: >-
+          {{
+            (_sa_search.json.serviceAccounts | default([]))
+            | selectattr('name', 'equalto', grafana_sa_name)
+            | list | length > 0
+          }}
+
+    - name: Grafana token | Pick SA id if exists
+      when: _sa_exists
+      ansible.builtin.set_fact:
+        _sa_id: >-
+          {{
+            (_sa_search.json.serviceAccounts | default([]))
+            | selectattr('name', 'equalto', grafana_sa_name)
+            | map(attribute='id')
+            | list | first
+          }}
+
+    - name: Grafana token | Create service account
+      when: not _sa_exists
+      ansible.builtin.uri:
+        url: "{{ grafana_api_url }}/api/serviceaccounts"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "{{ (grafana_admin_token | length > 0) | ternary('Bearer ' ~ grafana_admin_token, omit) }}"
+          X-Grafana-Org-Id: "{{ grafana_org_id | default(omit) }}"
+        url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+        url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+        force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+        body_format: json
+        body:
+          name: "{{ grafana_sa_name }}"
+          role: "{{ grafana_sa_role }}"
+        status_code: [200, 201, 400, 401, 403, 404, 409]
+        return_content: true
+        validate_certs: false
+      register: _sa_create
+      no_log: "{{ not grafana_token_debug }}"
+
+    - name: Grafana token | Fail with readable error if SA creation failed
+      when: not _sa_exists and (_sa_create.status not in [200, 201])
+      ansible.builtin.fail:
+        msg: >-
+          Failed to create service account (HTTP {{ _sa_create.status }}).
+          Hints:
+            - 401/403: need Org Admin (or Server Admin) credentials; try grafana_admin_token, or set grafana_org_id
+            - 400: body invalid; check JSON (name/role)
+            - 404: endpoint disabled (Grafana too old or service accounts disabled)
+            - 409: SA with this name already exists
+          Response: {{ _sa_create.json | default(_sa_create.content | default('')) }}
+
+    - name: Grafana token | Set SA id after creation
+      when: not _sa_exists
+      ansible.builtin.set_fact:
+        _sa_id: "{{ _sa_create.json.id }}"
+
+    - name: Grafana token | Build effective SA token name
+      ansible.builtin.set_fact:
+        _sa_token_name_effective: >-
+          {{
+            grafana_token_refresh
+              | ternary(grafana_sa_token_name ~ '-' ~ ansible_date_time.epoch, grafana_sa_token_name)
+          }}
+      run_once: true
+
+    - name: Grafana token | Create SA token
+      ansible.builtin.uri:
+        url: "{{ grafana_api_url }}/api/serviceaccounts/{{ _sa_id }}/tokens"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "{{ (grafana_admin_token | length > 0) | ternary('Bearer ' ~ grafana_admin_token, omit) }}"
+          X-Grafana-Org-Id: "{{ grafana_org_id | default(omit) }}"
+        url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+        url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+        force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+        body_format: json
+        body:
+          name: "{{ _sa_token_name_effective }}"
+        status_code: [200, 201, 400, 401, 403, 404, 409]
+        return_content: true
+        validate_certs: false
+      register: _sa_token
+      no_log: "{{ not grafana_token_debug }}"
+
+    - name: Grafana token | Fail with readable error if token creation failed
+      when: _sa_token.status not in [200, 201]
+      ansible.builtin.fail:
+        msg: >-
+          Failed to create service account token (HTTP {{ _sa_token.status }}).
+          Hints:
+            - 400: check that "secondsToLive" is a number and body is valid JSON
+            - 401/403: need admin credentials or admin API token
+            - 404: service accounts may be disabled or SA id invalid
+            - 409: token with this name already exists; try grafana_token_refresh=true
+          Response: {{ _sa_token.json | default(_sa_token.content | default('')) }}
+
+    - name: Grafana token | Ensure .env.grafana exists with secure mode
+      ansible.builtin.file:
+        path: "{{ grafana_env_file }}"
+        state: touch
+        mode: "0600"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Grafana token | Write .env.grafana (service account)
+      ansible.builtin.blockinfile:
+        path: "{{ grafana_env_file }}"
+        marker: "# {mark} managed by Ansible grafana_token"
+        block: |
+          export GRAFANA_URL="{{ grafana_api_url }}"
+          export GRAFANA_TOKEN="{{ _sa_token.json.key }}"
+          export DASH_DIR="{{ grafana_dash_dir }}"
+        create: false
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+- name: Grafana token | Create legacy API key (fallback)
+  when: _need_create_token and ((_sa_probe.status | default(500)) != 200)
+  tags: [grafana_token]
+  block:
+    - name: Grafana token | Create legacy API key
+      ansible.builtin.uri:
+        url: "{{ grafana_api_url }}/api/auth/keys"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "{{ (grafana_admin_token | length > 0) | ternary('Bearer ' ~ grafana_admin_token, omit) }}"
+        url_username: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_user, omit) }}"
+        url_password: "{{ (grafana_admin_token | length == 0) | ternary(grafana_admin_password, omit) }}"
+        force_basic_auth: "{{ grafana_admin_token | length == 0 }}"
+        body_format: json
+        body:
+          name: "{{ grafana_sa_name }}"
+          role: "{{ grafana_sa_role }}"
+          secondsToLive: "{{ grafana_sa_ttl_seconds | int }}"
+        status_code: [200, 201, 400, 401, 403, 404, 409]
+        return_content: true
+        validate_certs: false
+      register: _legacy
+      no_log: true
+
+    - name: Grafana token | Fail with readable error if legacy key creation failed
+      when: _legacy.status not in [200, 201]
+      ansible.builtin.fail:
+        msg: >-
+          Failed to create legacy API key (HTTP {{ _legacy.status }}).
+          Response: {{ _legacy.json | default(_legacy.content | default('')) }}
+
+    - name: Grafana token | Ensure .env.grafana exists with secure mode
+      ansible.builtin.file:
+        path: "{{ grafana_env_file }}"
+        state: touch
+        mode: "0600"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Grafana token | Write .env.grafana (legacy key)
+      ansible.builtin.blockinfile:
+        path: "{{ grafana_env_file }}"
+        marker: "# {mark} managed by Ansible grafana_token"
+        block: |
+          export GRAFANA_URL="{{ grafana_api_url }}"
+          export GRAFANA_TOKEN="{{ _legacy.json.key }}"
+          export DASH_DIR="{{ grafana_dash_dir }}"
+        create: false
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+- name: Grafana token | Ensure .gitignore exists with mode 0644
+  ansible.builtin.file:
+    path: "{{ repo_root }}/.gitignore"
+    state: touch
+    mode: "0644"
+  delegate_to: localhost
+  run_once: true
+  tags: [grafana_token]
+
+- name: Grafana token | Add .env.grafana to .gitignore
+  ansible.builtin.lineinfile:
+    path: "{{ repo_root }}/.gitignore"
+    line: "{{ grafana_env_file | regex_replace('^' ~ repo_root ~ '/', '') }}"
+    state: present
+  delegate_to: localhost
+  run_once: true
+  tags: [grafana_token]

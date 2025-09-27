@@ -1,0 +1,95 @@
+# === GRAFANA: директории, provisioning, дашборды ===
+
+- name: Create Grafana directory tree (owner 472:472)
+  tags: [grafana_setup]
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "472"
+    group: "472"
+  loop:
+    - "{{ grafana_dir }}"
+    - "{{ grafana_provisioning_dir }}"
+    - "{{ grafana_provisioning_dir }}/dashboards"
+    - "{{ grafana_provisioning_dir }}/datasources"
+    - "{{ grafana_dashboards_dir }}"
+    - "{{ grafana_plugins_dir | default(grafana_dir ~ '/plugins') }}"
+
+- name: "Render Grafana provisioning: dashboards.yml"
+  tags: [grafana_provisioning]
+  ansible.builtin.template:
+    src: "grafana/provisioning/dashboards.yml.j2"
+    dest: "{{ grafana_provisioning_dir }}/dashboards/dashboards.yml"
+    mode: "0644"
+    owner: "472"
+    group: "472"
+  notify: Restart grafana
+
+- name: "Render Grafana provisioning: datasources.yml"
+  tags: [grafana_provisioning]
+  ansible.builtin.template:
+    src: "grafana/provisioning/datasources.yml.j2"
+    dest: "{{ grafana_provisioning_dir }}/datasources/datasources.yml"
+    mode: "0644"
+    owner: "472"
+    group: "472"
+  notify: Restart grafana
+
+# Дашборды: hot-reload, без рестартов
+- name: Sync Grafana dashboards (copy)
+  tags: [grafana_dashboards]
+  when: not (grafana_dashboards_use_rsync | default(false))
+  ansible.builtin.copy:
+    src: "{{ grafana_dashboards_repo_dir }}/"
+    dest: "{{ grafana_dashboards_dir }}/"
+    owner: "472"
+    group: "472"
+    mode: "0644"
+
+- name: Mirror Grafana dashboards (rsync, deletes extraneous)
+  tags: [grafana_dashboards]
+  when: grafana_dashboards_use_rsync | default(false)
+  ansible.posix.synchronize:
+    src: "{{ grafana_dashboards_repo_dir }}/"
+    dest: "{{ grafana_dashboards_dir }}/"
+    archive: true
+    delete: true
+
+# Пермишены: сначала владельцы рекурсивно, затем корректные режимы
+- name: Fix ownership for dashboards
+  tags: [grafana_dashboards]
+  ansible.builtin.file:
+    path: "{{ grafana_dashboards_dir }}"
+    state: directory
+    recurse: true
+    owner: "472"
+    group: "472"
+
+- name: Gather dashboard directories
+  tags: [grafana_dashboards]
+  ansible.builtin.find:
+    paths: "{{ grafana_dashboards_dir }}"
+    file_type: directory
+  register: graf_dirs
+
+- name: Chmod 0755 on dashboard dirs
+  tags: [grafana_dashboards]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0755"
+  loop: "{{ graf_dirs.files }}"
+
+- name: Gather dashboard files
+  tags: [grafana_dashboards]
+  ansible.builtin.find:
+    paths: "{{ grafana_dashboards_dir }}"
+    file_type: file
+  register: graf_files
+
+- name: Chmod 0644 on dashboard files
+  tags: [grafana_dashboards]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0644"
+  loop: "{{ graf_files.files }}"

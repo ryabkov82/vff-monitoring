@@ -1,0 +1,48 @@
+# --- Base / paths -----------------------------------------------------
+# Если monitoring_root не задан в inventory/group_vars — возьмём дефолт
+mon_root: "{{ monitoring_root | default('/opt/vff-monitoring') }}"
+compose_path: "{{ mon_root }}/docker-compose.yml"
+
+# Grafana paths on target host
+grafana_dir: "{{ mon_root }}/grafana"
+grafana_provisioning_dir: "{{ grafana_dir }}/provisioning"
+grafana_dashboards_dir: "{{ grafana_dir }}/dashboards"
+grafana_plugins_dir: "{{ grafana_dir }}/plugins"
+
+# Откуда читать JSON-дашборды на КОНТРОЛ-ноде (репозиторий)
+grafana_dashboards_repo_dir: "{{ playbook_dir }}/../grafana/dashboards"
+
+# --- Grafana credentials (safe defaults) ------------------------------
+grafana_admin_user: "admin"
+# Реальный пароль лучше держать в group_vars/vault; null, чтобы не подставлять пустую строку
+grafana_admin_password: null
+
+# --- Grafana API / bootstrap token (задачи grafana_token) ------------
+# URL API Grafana (по умолчанию — локальный порт)
+grafana_api_url: "http://127.0.0.1:{{ grafana_port }}"
+# Альтернатива basic auth: админ-токен Grafana; если пусто — используем grafana_admin_user/password
+grafana_admin_token: ""
+# Принудительно перевыпустить токен и перезаписать .env.grafana
+grafana_token_refresh: false
+
+# Параметры сервисного аккаунта для экспорта дашбордов
+grafana_sa_name: "export-bot"
+grafana_sa_role: "Viewer"
+grafana_sa_token_name: "export-token"
+grafana_sa_ttl_seconds: 31536000  # 1 год
+
+# --- Где писать .env.grafana на контрол-ноде --------------------------
+repo_root: "{{ lookup('ansible.builtin.pipe', 'git rev-parse --show-toplevel', errors='ignore') | default(playbook_dir ~ '/..', true) }}"
+grafana_env_file: "{{ repo_root }}/.env.grafana"
+grafana_dash_dir: "{{ repo_root }}/grafana/dashboards"
+
+grafana_token_debug: false
+
+# Сколько максимум забирать /api/search
+grafana_export_limit: 5000
+# JQ-фильтр нормализации
+grafana_export_jq_filter: >
+  .dashboard
+  | del(.id)
+  | (.. | objects | select(has("datasource")) | .datasource)
+      |= (if type=="object" and .type=="prometheus" then "Prometheus" else . end)

@@ -1,0 +1,12 @@
+- name: Create base directories
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - prometheus
+    - prometheus/rules
+    - prometheus/targets
+    - alertmanager
+    - grafana
+    - blackbox
