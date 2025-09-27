@@ -1,0 +1,31 @@
+- name: Render Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_root }}/prometheus/prometheus.yml"
+    mode: "0644"
+  notify: Prometheus reload
+
+- name: Render rules
+  ansible.builtin.template:
+    src: "rules/{{ item }}.yml.j2"
+    dest: "{{ monitoring_root }}/prometheus/rules/{{ item }}.yml"
+    mode: "0644"
+  loop:
+    - rec-network
+    - rec-blackbox
+    - rec-wireguard
+    - rec-ru-probe
+    - alerts-wireguard
+    - alerts-availability
+  notify: Prometheus reload
+
+- name: Render targets (file_sd)
+  ansible.builtin.template:
+    src: "targets/{{ item }}.json.j2"
+    dest: "{{ monitoring_root }}/prometheus/targets/{{ item }}.json"
+    mode: "0644"
+  loop:
+    - nodes
+    - bb-icmp
+    - bb-tcp443
+  notify: Prometheus reload

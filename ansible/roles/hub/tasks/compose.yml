@@ -1,0 +1,14 @@
+- name: Render docker-compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_root }}/docker-compose.yml"
+    mode: "0644"
+  notify:
+    - Restart services
+  vars:
+    services: null
+
+- name: Ensure docker compose stack is up
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    state: present

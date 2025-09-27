@@ -50,3 +50,14 @@
     project_src: "{{ monitoring_root }}"
     state: restarted
     services: ["alertmanager"]
+
+# ===== Grafana =====
+- name: Restart grafana
+  listen: Restart grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    files:
+      - "{{ monitoring_root }}/docker-compose.yml"
+    services:
+      - grafana
+    state: restarted

@@ -1,0 +1,9 @@
+- name: Render blackbox config (if present)
+  ansible.builtin.template:
+    src: blackbox.yml.j2
+    dest: "{{ monitoring_root }}/blackbox/blackbox.yml"
+    mode: "0644"
+  notify:
+    - Restart services
+  vars:
+    services: ["blackbox"]

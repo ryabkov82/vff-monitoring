@@ -6,8 +6,10 @@ ANSIBLE_FLAGS ?=
 .PHONY: help ping nginx hub nodes all
 
 help:
-	@echo "targets: ping | nginx | hub | nodes | all"
+	@echo "targets: ping | nginx | hub | nodes | prom-rules | prom-rules-check | prom-health | grafana | grafana-dashboards | grafana-provisioning | grafana-health | all"
 	@echo "usage: make nginx [ANSIBLE_FLAGS=--ask-vault-pass]"
+	@echo "usage: make grafana-dashboards [ANSIBLE_FLAGS=\"-e grafana_dashboards_use_rsync=true\"]"
+	@echo "usage: make prom-rules [ANSIBLE_FLAGS=--ask-vault-pass]"
 
 ping:
 	ansible -i $(INVENTORY) all -m ping
@@ -150,3 +152,62 @@ endif
 # Прогнать node_exporter на всей группе vpn
 node-exporter-vpn:
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_exporter $(ANSIBLE_FLAGS)
+
+# --- Grafana shortcuts --------------------------------------------------------
+.PHONY: grafana grafana-dashboards grafana-dashboards-check grafana-provisioning grafana-provisioning-check grafana-health
+
+# Все графановские задачи (setup + provisioning + dashboards)
+grafana:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana $(ANSIBLE_FLAGS)
+
+# Только копирование/обновление дашбордов (hot-reload, без рестарта Grafana)
+grafana-dashboards:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards $(ANSIBLE_FLAGS)
+
+# Dry-run дашбордов с diff
+grafana-dashboards-check:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards --check --diff $(ANSIBLE_FLAGS)
+
+.PHONY: grafana-token
+
+# Создание сервисного пользователя Grafana и загрузка токена в .env.grafana
+# make grafana-token-ansible ANSIBLE_FLAGS='-e grafana_token_refresh=true'
+grafana-token:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_token $(ANSIBLE_FLAGS)
+
+.PHONY: grafana-pull
+
+# Экспортировать дашборды через роль Ansible (все или по UID)
+# Примеры:
+#   make grafana-pull-ansible ANSIBLE_FLAGS='--tags grafana_export -e grafana_api_url=http://127.0.0.1:3000 -e grafana_admin_token=glsa_...'
+#   make grafana-pull-ansible ANSIBLE_FLAGS='--tags grafana_export -e grafana_export_uids=["availability"]'
+grafana-pull:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_export $(ANSIBLE_FLAGS)
+
+# Только provisioning (datasources/dashboards.yml) — вызовет notify: Restart grafana
+grafana-provisioning:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning $(ANSIBLE_FLAGS)
+
+# Dry-run provisioning с diff
+grafana-provisioning-check:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning --check --diff $(ANSIBLE_FLAGS)
+
+# Быстрый healthcheck Grafana на хабе
+grafana-health:
+	ansible -i $(INVENTORY) hub -m shell \
+	  -a 'curl -fsS http://127.0.0.1:$(grafana_port)/api/health >/dev/null && echo OK || (echo FAIL && exit 1)' $(ANSIBLE_FLAGS)
+
+.PHONY: prom-rules prom-rules-check prom-health
+
+# Применить только правила Prometheus (recording/alerts) + health-checks
+# Теги берутся из roles/hub/tasks/prometheus.yml (prometheus) и health.yml (health)
+prom-rules:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
+
+# Dry-run правил с diff + health (health выполнится «вхолостую» и покажет, что дернётся)
+prom-rules-check:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" --check --diff $(ANSIBLE_FLAGS)
+
+# Запустить только health-проверки (на случай, если рулы уже применены)
+prom-health:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags health $(ANSIBLE_FLAGS)

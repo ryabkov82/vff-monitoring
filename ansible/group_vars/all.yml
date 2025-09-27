@@ -34,12 +34,6 @@ vpn_nodes:
   #   instance: "10.66.0.3:9100"
   #   role: "vpn"
 
-# Blackbox цели
-blackbox_icmp_targets:
-  - "10.77.0.2"
-blackbox_tcp443_targets:
-  - "10.77.0.2:443"
-
 # RU-проба (если выполняем на хабе)
 ru_probe_enabled: true
 ru_probe_schedule_hours: [3,9,15,21]

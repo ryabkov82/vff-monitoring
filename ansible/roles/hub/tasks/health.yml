@@ -1,0 +1,49 @@
+- name: Query reload success metric
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/api/v1/query?query=prometheus_config_last_reload_successful"
+    return_content: true
+  register: prom_rl_ok
+
+- name: Assert Prometheus reload succeeded
+  ansible.builtin.assert:
+    that:
+      - (prom_rl_ok.json.status | default('')) == 'success'
+      - (prom_rl_ok.json.data.result | length) > 0
+      - (prom_rl_ok.json.data.result[0].value[1] | float) == 1.0
+    fail_msg: >
+      Prometheus reload failed (prometheus_config_last_reload_successful=0). Проверь логи Prometheus и конфиги.
+
+- name: Wait for services to listen
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ item }}"
+    timeout: 60
+  loop:
+    - "{{ prometheus_port }}"
+    - "{{ alertmanager_port }}"
+    - "{{ grafana_port }}"
+    - "{{ blackbox_port }}"
+
+- name: Check Prometheus ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/ready"
+    status_code: 200
+    return_content: false
+
+- name: Check Alertmanager ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ alertmanager_port }}/-/ready"
+    status_code: 200
+    return_content: false
+
+- name: Check Grafana health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+    status_code: 200
+    return_content: false
+
+- name: Check Blackbox responds
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ blackbox_port }}/metrics"
+    status_code: 200
+    return_content: false

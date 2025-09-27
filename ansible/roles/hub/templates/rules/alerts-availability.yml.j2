@@ -1,0 +1,77 @@
+groups:
+- name: availability
+  rules:
+    # ICMP недоступен непрерывно ≥5м (усреднение за 5 минут уже внутри метрики)
+    - alert: PingDown
+      expr: bb:icmp:avail:ratio:5m == 0
+      labels:
+        severity: critical
+      annotations:
+        summary: |
+          {% raw %}ICMP недоступен: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          {% raw %}В течение 5 минут подряд probe_success=0 для {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}
+
+    # Высокий RTT при нормальной доступности (p95 > 200 ms)
+    - alert: PingHighLatency
+      expr: (bb:icmp:rtt:p95:5m > 0.200) and on (instance) (bb:icmp:avail:ratio:5m > 0.9)
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}Высокий RTT (p95 > 200 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          p95 ICMP RTT > 200 мс при доступности > 90% за последние 5 минут.
+
+    # Потери ICMP >10% (усреднение за 10 мин по 5-мин агрегату)
+    - alert: PingPacketLoss
+      expr: avg_over_time(bb:icmp:loss:ratio:5m[10m]) > 0.10
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}Потери ICMP > 10%: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          Средние потери пакетов ICMP за 10 минут превышают 10%.
+
+    # Сильный джиттер RTT (>50 ms stdev) при нормальной доступности
+    - alert: PingHighJitter
+      expr: (bb:icmp:rtt:stddev:5m > 0.050) and on (instance) (bb:icmp:avail:ratio:5m > 0.9)
+      for: 10m
+      labels:
+        severity: info
+      annotations:
+        summary: |
+          {% raw %}Высокий джиттер RTT (> 50 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          Стандартное отклонение ICMP RTT превышает 50 мс при доступности > 90%.
+
+    # REALITY TCP:443 недоступен непрерывно ≥2м (усреднение за 2 минуты уже внутри метрики)
+    - alert: Tcp443Failed
+      expr: bb:tcp443:avail:ratio:2m == 0
+      labels:
+        severity: critical
+      annotations:
+        summary: |
+          {% raw %}REALITY порт 443 не отвечает: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          В течение 2 минут подряд probe_success=0 для TCP/443 проверки.
+
+    # Медленный TCP-connect на 443 при нормальной доступности: p95 > 300 ms
+    - alert: Tcp443Slow
+      expr: (bb:tcp443:latency:p95:5m > 0.300) and on (instance) (bb:tcp443:avail:ratio:2m > 0.9)
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}Медленный TCP 443 (p95 > 300 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+
+        description: |
+          p95 длительности TCP/443 превышает 300 мс при доступности > 90% за последние 5 минут.
