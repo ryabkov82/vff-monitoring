@@ -1,0 +1,16 @@
+[Interface]
+Address = {{ hub_wg_ip }}/24
+ListenPort = {{ wg_listen_port }}
+PrivateKey = {{ hub_wg_privkey_runtime }}
+MTU = {{ wg_mtu }}
+
+{% for n in vpn_nodes %}
+{% set node_pub = (vpn_pubmap.get(n.name) if vpn_pubmap is defined else none) | default(n.wg_pubkey | default('')) %}
+{% if node_pub | length > 0 %}
+[Peer]
+# {{ n.name }}
+PublicKey = {{ node_pub }}
+AllowedIPs = {{ n.wg_ip }}/32
+PersistentKeepalive = 25
+{% endif %}
+{% endfor %}

@@ -1,0 +1,51 @@
+# URL’ы и внешние адреса
+external_url_prometheus: "https://prom-new.vpn-for-friends.com"
+external_url_alerts: "https://alerts-new.vpn-for-friends.com"
+
+# Grafana admin (в vault)
+grafana_admin_user: "admin"
+
+nginx_sites_available_dir: /etc/nginx/sites-available
+nginx_sites_enabled_dir:  /etc/nginx/sites-enabled
+
+# Домены
+prom_domain:    "prom-new.vpn-for-friends.com"
+grafana_domain: "grafana-new.vpn-for-friends.com"
+alerts_domain:  "alerts-new.vpn-for-friends.com"
+
+# Порты бэкендов (host network у сервисов уже включён)
+prometheus_port: 9090
+grafana_port:    3000
+alertmanager_port: 9093
+
+hub_wg_pubkey: "{{ lookup('file', '/etc/wireguard/{{ wg_iface }}.pub') | default('', true) }}"
+
+# Basic auth (лучше держать в vault)
+nginx_basic_auth_enabled: true
+nginx_users:
+  - user: "admin"
+
+# (опц.) allow-list. Пустой список = не включаем.
+nginx_allow_list: []     # пример: ["203.0.113.4", "198.51.100.0/24"]
+
+# Сертификаты: choose one of [existing, certbot]
+nginx_cert_method: "certbot"
+
+# Для existing — указываем пути:
+nginx_certs:
+  prom:
+    fullchain: "/etc/letsencrypt/live/prom-new.vpn-for-friends.com/fullchain.pem"
+    privkey:   "/etc/letsencrypt/live/prom-new.vpn-for-friends.com/privkey.pem"
+  grafana:
+    fullchain: "/etc/letsencrypt/live/grafana-new.vpn-for-friends.com/fullchain.pem"
+    privkey:   "/etc/letsencrypt/live/grafana-new.vpn-for-friends.com/privkey.pem"
+  alerts:
+    fullchain: "/etc/letsencrypt/live/alerts-new.vpn-for-friends.com/fullchain.pem"
+    privkey:   "/etc/letsencrypt/live/alerts-new.vpn-for-friends.com/privkey.pem"
+
+# Для certbot:
+certbot_email: "admin@vpn-for-friends.com"
+certbot_staging: false      # true — для теста
+
+# Поведение заливки дашбордов (rsync удаляет лишние файлы на целевом хосте)
+grafana_dashboards_use_rsync: true

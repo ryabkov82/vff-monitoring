@@ -1,0 +1,5 @@
+[
+{% for n in vpn_nodes if n.role == 'vpn' %}
+  { "targets": ["{{ n.wg_ip }}:443"], "labels": { "name": "{{ n.name }}" } }{% if not loop.last %},{% endif %}
+{% endfor %}
+]

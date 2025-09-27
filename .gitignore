@@ -1,0 +1,10 @@
+# полностью скрыть vscode
+.vscode/*
+
+# но оставить то, что полезно команде
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/schemas/**
+
+# локальные переменные для Grafana
+.env.grafana

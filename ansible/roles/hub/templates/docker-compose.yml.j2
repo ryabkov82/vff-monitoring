@@ -1,0 +1,122 @@
+version: "3.9"
+services:
+  prometheus:
+    image: "{{ prometheus_image }}"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.external-url={{ external_url_prometheus }}"
+      - "--web.listen-address=127.0.0.1:{{ prometheus_port }}"
+      - "--web.enable-lifecycle"
+    volumes:
+      - "{{ monitoring_root }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "{{ monitoring_root }}/prometheus/rules:/etc/prometheus/rules:ro"
+      - "{{ monitoring_root }}/prometheus/targets:/etc/prometheus/targets:ro"
+      - "prom_data:/prometheus"
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ prometheus_port }}/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+
+  alertmanager:
+    image: "{{ alertmanager_image }}"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.external-url={{ external_url_alerts }}"
+      - "--web.listen-address=127.0.0.1:{{ alertmanager_port }}"
+    volumes:
+      - "{{ monitoring_root }}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
+      - "am_data:/alertmanager"
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ alertmanager_port }}/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  blackbox:
+    image: "{{ blackbox_image }}"
+    command:
+      - "--config.file=/etc/blackbox_exporter/blackbox.yml"
+      - "--web.listen-address=127.0.0.1:{{ blackbox_port }}"    
+    volumes:
+      - "{{ monitoring_root }}/blackbox:/etc/blackbox_exporter:ro"
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ blackbox_port }}/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  grafana:
+    image: "{{ grafana_image }}"
+    user: "472:472"                    # опционально, но полезно
+    environment:
+      GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+      GF_SERVER_HTTP_ADDR: "127.0.0.1"
+      GF_SERVER_HTTP_PORT: "{{ grafana_port }}"
+      GF_SERVER_ROOT_URL: "https://{{ grafana_domain }}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: "{{ grafana_cookie_samesite | default('lax') }}"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "5s"
+    volumes:
+      - "{{ grafana_provisioning_dir }}:/etc/grafana/provisioning:ro"
+      - "{{ grafana_dashboards_dir }}:/var/lib/grafana/dashboards:ro"
+      - "graf_data:/var/lib/grafana"
+      # если понадобятся кастомные плагины, раскомментируй:
+      # - ./grafana/plugins:/var/lib/grafana/plugins      
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "bash"
+        - "-lc"
+        - >
+          curl -fsS http://127.0.0.1:{{ grafana_port }}/api/health
+          -u "{{ grafana_admin_user }}:{{ grafana_admin_password }}"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+{% if marzban_exporter_enabled | bool %}
+  marzban-exporter:
+    image: "{{ marzban_exporter_image }}"
+    restart: unless-stopped
+    environment:
+      MARZBAN_BASE_URL: "{{ marzban_base_url }}"
+      MARZBAN_USERNAME: "{{ MARZBAN_USERNAME }}"
+      MARZBAN_PASSWORD: "{{ MARZBAN_PASSWORD }}"
+      UPDATE_INTERVAL: "{{ marzban_update_interval }}"
+      METRICS_PORT: "{{ marzban_exporter_metrics_port }}"
+      METRICS_PROTECTED: "{{ 'true' if marzban_exporter_protected else 'false' }}"
+      METRICS_USERNAME: "{{ EXPORTER_METRICS_USER }}"
+      METRICS_PASSWORD: "{{ EXPORTER_METRICS_PASS }}"
+    ports:
+      - "127.0.0.1:{{ marzban_exporter_bind_port }}:{{ marzban_exporter_metrics_port }}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ marzban_exporter_metrics_port }}/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+{% endif %}
+  
+volumes:
+  prom_data: {}
+  am_data: {}
+  graf_data: {}

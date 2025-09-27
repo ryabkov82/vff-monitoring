@@ -1,0 +1,37 @@
+# Всё статически импортируем (import_tasks) — теги наследуются.
+
+- name: Import setup tasks
+  ansible.builtin.import_tasks: setup.yml
+  tags: [setup]
+
+- name: Import Grafana tasks
+  ansible.builtin.import_tasks: grafana.yml
+  tags: [grafana]
+
+- name: Import Prometheus tasks
+  ansible.builtin.import_tasks: prometheus.yml
+  tags: [prometheus]
+
+- name: Import Alertmanager tasks
+  ansible.builtin.import_tasks: alertmanager.yml
+  tags: [alertmanager]
+
+- name: Import Blackbox tasks
+  ansible.builtin.import_tasks: blackbox.yml
+  tags: [blackbox]
+
+- name: Flush handlers before health checks
+  ansible.builtin.meta: flush_handlers
+  tags: [health]
+
+- name: Import health checks
+  ansible.builtin.import_tasks: health.yml
+  tags: [health]
+
+- name: Import Grafana token tasks
+  ansible.builtin.import_tasks: grafana_token.yml
+  tags: [grafana_token]
+
+- name: Import Grafana export tasks
+  ansible.builtin.import_tasks: grafana_export.yml
+  tags: [grafana_export]

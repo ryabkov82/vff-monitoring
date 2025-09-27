@@ -1,0 +1,32 @@
+groups:
+- name: rec-blackbox
+  rules:
+    # RTT, среднее и p95 за 5 минут (только чистый rtt)
+    - record: bb:icmp:rtt:avg:5m
+      expr: avg_over_time(probe_icmp_duration_seconds{job="blackbox_icmp", phase="rtt"}[5m])
+
+    - record: bb:icmp:rtt:p95:5m
+      expr: quantile_over_time(0.95, probe_icmp_duration_seconds{job="blackbox_icmp", phase="rtt"}[5m])
+
+    # Джиттер (стандартное отклонение RTT за 5 минут)
+    - record: bb:icmp:rtt:stddev:5m
+      expr: stddev_over_time(probe_icmp_duration_seconds{job="blackbox_icmp", phase="rtt"}[5m])
+
+    # Доступность и потери за 5 минут
+    - record: bb:icmp:avail:ratio:5m
+      expr: avg_over_time(probe_success{job="blackbox_icmp"}[5m])
+
+    - record: bb:icmp:loss:ratio:5m
+      expr: 1 - bb:icmp:avail:ratio:5m
+
+    # Доля успешных TCP:443 проверок за 2 минуты
+    - record: bb:tcp443:avail:ratio:2m
+      expr: avg_over_time(probe_success{job="blackbox_tcp443"}[2m])
+
+    # p95 длительности TCP:443 за 5 минут
+    - record: bb:tcp443:latency:p95:5m
+      expr: quantile_over_time(0.95, probe_duration_seconds{job="blackbox_tcp443"}[5m])
+
+    # (опц.) среднее за 5 минут — вдруг пригодится для графиков/сравнений
+    - record: bb:tcp443:latency:avg:5m
+      expr: avg_over_time(probe_duration_seconds{job="blackbox_tcp443"}[5m])
