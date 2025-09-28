@@ -1,0 +1,16 @@
+[Unit]
+Description=iperf3 TCP server on port %i (bind {{ node_iperf_bind_ip_effective }})
+After=network-online.target wg-quick@{{ wg_iface }}.service
+Wants=network-online.target wg-quick@{{ wg_iface }}.service
+
+[Service]
+Type=simple
+# ждём появления IP на {{ wg_iface }} (до 20 сек)
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 20); do ip -4 addr show dev {{ wg_iface }} | grep -q "{{ node_iperf_bind_ip_effective }}/" && exit 0; sleep 1; done; echo "WG IP not present" >&2; exit 1'
+ExecStart=/usr/bin/iperf3 -s -p %i -B {{ node_iperf_bind_ip_effective }} {{ node_iperf_extra_args | default("") }}
+Restart=on-failure
+RestartSec=3s
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

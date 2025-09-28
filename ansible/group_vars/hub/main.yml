@@ -18,6 +18,8 @@ prometheus_port: 9090
 grafana_port:    3000
 alertmanager_port: 9093
 
+hub_wg_ip: "10.77.0.1"
+hub_public_endpoint: "wg-hub.vpn-for-friends.com"
 hub_wg_pubkey: "{{ lookup('file', '/etc/wireguard/{{ wg_iface }}.pub') | default('', true) }}"
 
 # Basic auth (лучше держать в vault)

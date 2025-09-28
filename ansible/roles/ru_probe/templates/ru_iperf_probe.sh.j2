@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# === Параметры/пути (из Jinja-переменных роли) ===
+TEXTDIR="{{ node_exporter_textfile_dir }}"
+mkdir -p "$TEXTDIR"
+
+# --- Таймауты/настройки (можно переопределять через env) ---
+SKIP_BUSY="${SKIP_BUSY:-{{ ru_probe_skip_busy | ternary('true','false') }}}"
+BUSY_THRESH="${BUSY_THRESH:-{{ '%.2f' | format(ru_probe_busy_thresh) }}}"
+PROM_URL="${PROM_URL:-{{ ru_probe_prom_url }}}"
+PROM_USER="${PROM_USER:-{{ ru_probe_prom_user }}}"
+PROM_PASS="${PROM_PASS:-{{ ru_probe_prom_pass }}}"
+
+# iperf/curl: добавлены таймауты
+CURL_TIMEOUT="${CURL_TIMEOUT:-{{ ru_probe_curl_timeout | default(3) }}}"
+DURATION="${DURATION:-{{ ru_probe_duration }}}"
+CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-{{ ru_probe_connect_timeout | default(2) }}}"
+HARD_TIMEOUT="${HARD_TIMEOUT:-{{ ru_probe_hard_timeout | default(15) }}}"
+PAR="${PAR:-{{ ru_probe_parallel }}}"
+
+# отладка функции is_busy (0/1)
+IS_BUSY_DEBUG="${IS_BUSY_DEBUG:-0}"
+
+# цели: "name;wg_ip;iperf_port" — генерируются из vpn_nodes
+TARGETS=(
+{% for n in vpn_nodes
+     if (ru_probe_target_roles | length == 0) or (n.role is defined and (n.role in ru_probe_target_roles)) %}
+"{{ n.name }};{{ n.wg_ip }};{{ n.iperf_port | default(ru_probe_port_default) }}"
+{% endfor %}
+)
+
+# --- блокировка от параллельных запусков (systemd timer/ручной) ---
+LOCKFILE="${LOCKFILE:-/run/ru_iperf_probe.lock}"
+exec 9>"$LOCKFILE" || true
+if ! flock -n 9; then
+  # тихо выходим, если уже идёт другой запуск
+  exit 0
+fi
+
+# --- временный файл для атомарной публикации метрик ---
+TMP="$(mktemp "${TEXTDIR}/.ru_iperf.prom.XXXXXX")"
+cleanup(){ rm -f "$TMP"; }
+trap cleanup EXIT
+
+# --- вспомогательные функции ---
+
+promql_escape() {
+  # экранируем \ и " для строковых литералов PromQL
+  sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# проверка занятости канала по iface:utilization:ratio с таймаутом curl
+is_busy() {
+  local name="$1"
+  # экранируем значение для PromQL
+  local name_esc
+  name_esc="$(printf '%s' "$name" | promql_escape)"
+  # Никаких обратных слэшей перед кавычками в самом запросе!
+  local q
+  q=$(printf 'max_over_time(iface:utilization:ratio{name="%s"}[1m])' "$name_esc")
+
+  local resp
+  if [[ -n "$PROM_USER" ]]; then
+    resp=$(curl -sS --max-time "$CURL_TIMEOUT" -u "$PROM_USER:$PROM_PASS" \
+             -G "$PROM_URL/api/v1/query" --data-urlencode "query=$q" || true)
+  else
+    resp=$(curl -sS --max-time "$CURL_TIMEOUT" \
+             -G "$PROM_URL/api/v1/query" --data-urlencode "query=$q" || true)
+  fi
+
+  local v
+  v=$(jq -r '.data.result[0].value[1] // empty' <<<"$resp" 2>/dev/null || echo "")
+  v=${v:-0}
+
+  # DEBUG-блок (оставь как у тебя)
+  if [[ "$IS_BUSY_DEBUG" = "1" ]]; then
+    local auth_mask=""; [[ -n "${PROM_USER:-}" ]] && auth_mask=" -u ${PROM_USER}:********"
+    echo "[is_busy] PROM_URL=${PROM_URL}${auth_mask}"
+    echo "[is_busy] QUERY=${q}"
+    if command -v jq >/dev/null 2>&1; then
+      echo "[is_busy] RAW_RESPONSE:"; printf '%s\n' "$resp" | jq .
+    else
+      echo "[is_busy] RAW_RESPONSE: $resp"
+    fi
+    echo "[is_busy] parsed_value=${v:-<empty>}  threshold=${BUSY_THRESH}"
+  fi
+
+  # сравнение; 0 => занято, 1 => свободно
+  awk -v th="$BUSY_THRESH" -v x="$v" 'BEGIN{exit !(x>th)}'
+}
+
+# безопасный запуск iperf3 под внешним timeout, с таймаутом TCP-connect
+run_iperf_json() {
+  local ip="$1" port="$2" reverse_flag="$3"   # reverse_flag: "" или "-R"
+  local conn_ms=$(( CONNECT_TIMEOUT * 1000 ))
+  timeout "$HARD_TIMEOUT" \
+    /usr/bin/iperf3 -c "$ip" -p "$port" -P "$PAR" -t "$DURATION" \
+                    --connect-timeout "$conn_ms" --json $reverse_flag 2>/dev/null \
+    || true
+}
+
+# --- основной цикл по целям ---
+for row in "${TARGETS[@]}"; do
+  IFS=';' read -r NAME WG_IP PORT <<<"$row"
+
+  if [[ "$SKIP_BUSY" == "true" ]] && is_busy "$NAME"; then
+    echo "# skipped due to high utilization: $NAME" >>"$TMP"
+    continue
+  fi
+
+  # UPLINK (RU -> EU)
+  UL_JSON="$(run_iperf_json "$WG_IP" "$PORT" "")"
+  UL_BPS="$(jq -r '.end.sum_sent.bits_per_second // empty' <<<"$UL_JSON" 2>/dev/null || true)"
+
+  # DOWNLINK (EU -> RU)
+  DL_JSON="$(run_iperf_json "$WG_IP" "$PORT" "-R")"
+  DL_BPS="$(jq -r '.end.sum_received.bits_per_second // empty' <<<"$DL_JSON" 2>/dev/null || true)"
+
+  # per-target timestamp — для last_run_age
+  NOW=$(date +%s)
+  printf 'ru_probe_last_run_timestamp_seconds{name="%s"} %s\n' "$NAME" "$NOW" >>"$TMP"
+
+  if [[ -n "${UL_BPS:-}" ]]; then
+    printf 'ru_probe_throughput_bps{name="%s",direction="uplink",protocol="tcp"} %.0f\n' \
+      "$NAME" "$UL_BPS" >>"$TMP"
+  fi
+  if [[ -n "${DL_BPS:-}" ]]; then
+    printf 'ru_probe_throughput_bps{name="%s",direction="downlink",protocol="tcp"} %.0f\n' \
+      "$NAME" "$DL_BPS" >>"$TMP"
+  fi
+done
+
+# --- атомарная публикация метрик для node_exporter ---
+install -o root -g root -m 0644 "$TMP" "${TEXTDIR}/ru_iperf.prom"

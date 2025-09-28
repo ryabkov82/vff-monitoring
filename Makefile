@@ -3,10 +3,10 @@ INVENTORY ?= ansible/hosts.ini
 PLAY ?= ansible/site.yml
 ANSIBLE_FLAGS ?=
 
-.PHONY: help ping nginx hub nodes all
+.PHONY: help ping nginx docker node-exporter-hub hub nodes all
 
 help:
-	@echo "targets: ping | nginx | hub | nodes | prom-rules | prom-rules-check | prom-health | grafana | grafana-dashboards | grafana-provisioning | grafana-health | all"
+	@echo "targets: ping | nginx | docker | node-exporter-hub | hub | nodes | prom-rules | prom-rules-check | prom-health | grafana | grafana-dashboards | grafana-provisioning | grafana-health | all"
 	@echo "usage: make nginx [ANSIBLE_FLAGS=--ask-vault-pass]"
 	@echo "usage: make grafana-dashboards [ANSIBLE_FLAGS=\"-e grafana_dashboards_use_rsync=true\"]"
 	@echo "usage: make prom-rules [ANSIBLE_FLAGS=--ask-vault-pass]"
@@ -19,6 +19,10 @@ nginx:
 
 docker:
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags docker $(ANSIBLE_FLAGS)
+
+# Установить/обновить node_exporter только на хабе
+node-exporter-hub:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags node_exporter $(ANSIBLE_FLAGS)
 
 hub:
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags hub $(ANSIBLE_FLAGS)
@@ -211,3 +215,77 @@ prom-rules-check:
 # Запустить только health-проверки (на случай, если рулы уже применены)
 prom-health:
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags health $(ANSIBLE_FLAGS)
+
+# === RU iperf3 probe on hub ===
+.PHONY: ru-probe ru-probe-run ru-probe-status ru-probe-logs ru-probe-metrics
+
+# Где лежат метрики textfile на хабе
+TEXTFILE_DIR ?= /var/lib/node_exporter/textfile
+TAIL ?= 200
+
+# Применить роль ru_probe на хабе (скрипт, юниты, таймер)
+ru-probe:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags ru_probe $(ANSIBLE_FLAGS)
+
+# Запустить разово измерение прямо сейчас
+ru-probe-run:
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
+
+# Проверить состояние таймера/сервиса
+ru-probe-status:
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
+
+# Логи последнего запуска
+ru-probe-logs:
+	ansible -i $(INVENTORY) hub -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
+
+# Посмотреть опубликованные метрики (если файл уже создан)
+ru-probe-metrics:
+	ansible -i $(INVENTORY) hub -m shell -a 'test -f $(TEXTFILE_DIR)/ru_iperf.prom && cat $(TEXTFILE_DIR)/ru_iperf.prom || echo "no metrics yet"' $(ANSIBLE_FLAGS)
+
+# === iperf3 on nodes ===
+.PHONY: iperf-node iperf-vpn iperf-status iperf-logs
+
+# Установить/обновить iperf3-сервер на ОДНОМ узле (нужен HOST=...)
+# Пример: make iperf-node HOST=nl-ams-1
+iperf-node:
+ifndef HOST
+	$(error Usage: make iperf-node HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_iperf $(ANSIBLE_FLAGS)
+
+# Установить/обновить iperf3-сервер на ВСЕЙ группе vpn
+iperf-vpn:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_iperf $(ANSIBLE_FLAGS)
+
+# Проверить статус сервиса на узле (порт можно переопределить: PORT=5201)
+iperf-status:
+ifndef HOST
+	$(error Usage: make iperf-status HOST=<hostname> [PORT=5201])
+endif
+	@PORT="$${PORT:-5201}"; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl status --no-pager iperf3@'$$PORT $(ANSIBLE_FLAGS) || true
+
+# Логи сервиса (хвост), можно задать TAIL=200 и PORT=5201
+iperf-logs:
+ifndef HOST
+	$(error Usage: make iperf-logs HOST=<hostname> [PORT=5201] [TAIL=200])
+endif
+	@PORT="$${PORT:-5201}"; \
+	T="$${TAIL:-200}"; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u iperf3@'$$PORT' -n '$$T' --no-pager' $(ANSIBLE_FLAGS) || true
+
+.PHONY: node-if-speed node-if-speed-vpn
+
+# Публикация if_speed_bps (textfile) на ОДНОМ узле
+# Пример: make node-if-speed HOST=nl-ams-1
+node-if-speed:
+ifndef HOST
+	$(error Usage: make node-if-speed HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_if_speed $(ANSIBLE_FLAGS)
+
+# Публикация if_speed_bps (textfile) на всей группе vpn
+node-if-speed-vpn:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_if_speed $(ANSIBLE_FLAGS)

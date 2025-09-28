@@ -20,16 +20,14 @@ wg_iface: wgmon0
 wg_listen_port: 51821
 wg_mtu: 1280
 
-# Хаб
-hub_wg_ip: "10.77.0.1"
-hub_public_endpoint: "wg-hub.vpn-for-friends.com"
-
 # VPN узлы (источник для targets/*.json.j2)
 vpn_nodes:
   - name: "nl-ams-1"
     instance: "10.77.0.2:9100"        # адрес для Prometheus таргета (node_exporter)
     wg_ip: "10.77.0.2"
     role: "vpn"
+    uplink_device: "ens3"         # опц., по умолчанию ens3
+    uplink_speed_bps: 10000000000  # 10 Gbit/s    
   # - name: "DE-1"
   #   instance: "10.66.0.3:9100"
   #   role: "vpn"

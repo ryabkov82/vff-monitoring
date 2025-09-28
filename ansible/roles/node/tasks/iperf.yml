@@ -1,0 +1,138 @@
+---
+- name: Iperf3 | Install server package
+  when: node_iperf_enable | bool
+  ansible.builtin.package:
+    name: iperf3
+    state: present
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Mask vendor iperf3.service (conflicts with instance binding)
+  when: node_iperf_enable | bool
+  ansible.builtin.systemd:
+    name: iperf3.service
+    state: stopped
+    enabled: false
+    masked: true
+  tags: [node_iperf, iperf3]
+
+- name: Node | Derive WG IP from vpn_nodes when missing
+  ansible.builtin.set_fact:
+    wg_ip: >-
+      {{ (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | map(attribute='wg_ip') | first) }}
+  when:
+    - wg_ip is not defined
+    - vpn_nodes is defined
+    - (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | length) > 0
+  tags: [node]
+
+# Если bind IP явно задан в vars — используем его; иначе берём wg_ip (если есть)
+- name: Node | Compute effective bind IP for iperf3
+  ansible.builtin.set_fact:
+    node_iperf_bind_ip_effective: >-
+      {{
+        (node_iperf_bind_ip is defined and (node_iperf_bind_ip | length) > 0)
+        | ternary(node_iperf_bind_ip,
+                  (wg_ip | default('')))
+      }}
+  tags: [node, node_iperf, iperf3]
+
+- name: Iperf3 | Deploy templated systemd unit
+  when: node_iperf_enable | bool
+  ansible.builtin.template:
+    src: iperf3@.service.j2
+    dest: /etc/systemd/system/iperf3@.service
+    mode: "0644"
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Systemd daemon-reload
+  when: node_iperf_enable | bool
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Enable & start iperf3@{{ node_iperf_port }}
+  when: node_iperf_enable | bool
+  ansible.builtin.systemd:
+    name: "iperf3@{{ node_iperf_port }}"
+    enabled: true
+    state: started
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Detect ufw
+  when: node_iperf_enable | bool
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: _ufw
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Allow TCP Port via UFW (WG Only / Hub-Only)
+  when:
+    - node_iperf_enable | bool
+    - _ufw.stat.exists
+    - (
+        (node_iperf_ufw_from_hub_only | bool and
+         groups['hub'] is defined and (groups['hub'] | length) > 0 and
+         hostvars[groups['hub'][0]].hub_wg_ip is defined and
+         (hostvars[groups['hub'][0]].hub_wg_ip | length) > 0)
+        or
+        (not (node_iperf_ufw_from_hub_only | bool) and
+         wg_ip is defined and (wg_ip | length) > 0)
+      )
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ node_iperf_port }}"
+    from_ip: >-
+      {{
+        (node_iperf_ufw_from_hub_only | bool)
+        | ternary(hostvars[groups['hub'][0]].hub_wg_ip ~ '/32',
+                  (wg_ip | regex_replace('\.\d+$', '.0')) ~ '/24')
+      }}
+    comment: "iperf3 server (bind {{ node_iperf_bind_ip_effective | default('0.0.0.0') }})"
+  tags: [node_iperf, iperf3]
+
+# --- Resolve hub WG IP for firewall rules ---
+- name: Iperf3 | Derive hub WG IP (effective)
+  when: node_iperf_enable | bool
+  ansible.builtin.set_fact:
+    hub_wg_ip_effective: >-
+      {{
+        hub_wg_ip
+        | default( (groups['hub'] | first) | default('') | ternary(
+            hostvars[groups['hub'][0]].hub_wg_ip
+            | default(hostvars[groups['hub'][0]].wg_ip | default('')),
+            ''
+          ))
+      }}
+
+- name: Iperf3 | Assert hub WG IP is known
+  when: node_iperf_enable | bool
+  ansible.builtin.assert:
+    that:
+      - hub_wg_ip_effective is defined
+      - (hub_wg_ip_effective | length) > 0
+    fail_msg: >
+      Cannot resolve hub WG IP. Define `hub_wg_ip` in group_vars/all.yml (recommended),
+      or set `hub_wg_ip`/`wg_ip` for the host in group 'hub'.
+
+# --- Firewall allowances for iperf3 over WG ---
+- name: Iperf3 | Allow tcp/5201 from hub WG IP
+  when: node_iperf_enable | bool
+  ansible.builtin.iptables:
+    chain: INPUT
+    source: "{{ hub_wg_ip_effective }}/32"
+    protocol: tcp
+    destination_port: "{{ node_iperf_port }}"
+    jump: ACCEPT
+    state: present
+  tags: [node_iperf, iperf3]
+
+- name: Iperf3 | Allow tcp/5201 via wgmon0 (fallback)
+  when: node_iperf_enable | bool
+  ansible.builtin.command: >
+    iptables -C INPUT -i wgmon0 -p tcp --dport {{ node_iperf_port }} -j ACCEPT
+    || iptables -I INPUT 1 -i wgmon0 -p tcp --dport {{ node_iperf_port }} -j ACCEPT
+  register: ipt_allow_wg
+  changed_when: ipt_allow_wg.rc == 0
+  failed_when: false
+  tags: [node_iperf, iperf3]

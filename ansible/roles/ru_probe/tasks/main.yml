@@ -1,26 +1,60 @@
 ---
-- name: Install systemd units for RU probe
-  when: ru_probe_enabled | bool
-  ansible.builtin.template:
-    src: "reality-e2e@.service.j2"
-    dest: "/etc/systemd/system/reality-e2e@.service"
-    mode: "0644"
-  notify: Systemd daemon-reload
+- name: RU probe | Install deps
+  ansible.builtin.apt:
+    name: [iperf3, jq, curl]
+    state: present
+    update_cache: true
+  tags: [ru_probe]
 
-- name: Install timer
-  when: ru_probe_enabled | bool
-  ansible.builtin.template:
-    src: "reality-e2e@.timer.j2"
-    dest: "/etc/systemd/system/reality-e2e@.timer"
-    mode: "0644"
-  notify: Systemd daemon-reload
+- name: RU probe | Ensure textfile dir exists
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  tags: [ru_probe]
 
-- name: Ensure RU-probe timers are enabled and started
-  when: ru_probe_enabled | bool
+- name: RU probe | Install script
+  ansible.builtin.template:
+    src: ru_iperf_probe.sh.j2
+    dest: /usr/local/bin/ru_iperf_probe.sh
+    mode: "0755"
+    owner: root
+    group: root
+  tags: [ru_probe]
+
+- name: RU probe | Drop env file (optional overrides)
+  ansible.builtin.template:
+    src: ru-iperf-probe.env.j2
+    dest: /etc/default/ru-iperf-probe
+    mode: "0644"
+    owner: root
+    group: root
+  tags: [ru_probe]
+
+- name: RU probe | Systemd units
+  ansible.builtin.template:
+    src: ru-iperf-probe.service.j2
+    dest: /etc/systemd/system/ru-iperf-probe.service
+    mode: "0644"
+  tags: [ru_probe]
+
+- name: RU probe | Systemd timer
+  ansible.builtin.template:
+    src: ru-iperf-probe.timer.j2
+    dest: /etc/systemd/system/ru-iperf-probe.timer
+    mode: "0644"
+  tags: [ru_probe]
+
+- name: RU probe | Reload systemd
   ansible.builtin.systemd:
-    name: "reality-e2e@{{ item }}.timer"
+    daemon_reload: true
+  tags: [ru_probe]
+
+- name: RU probe | Enable & start timer
+  ansible.builtin.systemd:
+    name: ru-iperf-probe.timer
     enabled: true
     state: started
-  loop: "{{ ru_probe_schedule_hours | unique | sort }}"
-  loop_control:
-    label: "reality-e2e@{{ item }}.timer"
+  tags: [ru_probe]

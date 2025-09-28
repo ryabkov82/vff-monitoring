@@ -1,15 +1,55 @@
 groups:
 - name: rec-network
   rules:
-  - record: node:bps:rx
-    expr: |
-      8 * sum by (instance, name, role) (
-        (rate(node_network_receive_bytes_total[1m])
-         and on (instance, device) max by (instance, device) (if_speed_bps))
-      )
-  - record: node:bps:tx
-    expr: |
-      8 * sum by (instance, name, role) (
-        (rate(node_network_transmit_bytes_total[1m])
-         and on (instance, device) max by (instance, device) (if_speed_bps))
-      )
+    # Бит/с по каждому интерфейсу (RX+TX), исключаем служебные
+    - record: iface:bps:sum
+      expr: |
+        8 *
+        sum by (instance, device, name, role) (
+          rate(node_network_receive_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*"}[1m])
+        + rate(node_network_transmit_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*"}[1m])
+        )
+
+    # % занятости по каждому интерфейсу (0..1)
+    - record: iface:utilization:ratio
+      expr: |
+        iface:bps:sum
+        / on (instance, device) group_left
+        max by (instance, device) (if_speed_bps)
+
+    # Суммарная % занятость uplink'ов узла (если один uplink — будет равна его %)
+    - record: node:uplink_utilization:ratio
+      expr: |
+        sum by (instance, name, role) (iface:bps:sum)
+        /
+        sum by (instance, name, role) (
+          max by (instance, device, name, role) (if_speed_bps{device!~"lo|wg.*|docker.*|veth.*|br.*"})
+        )
+
+    # Узловой RX (бит/с), считаем только интерфейсы с известной скоростью
+    - record: node:bps:rx
+      expr: |
+        8 *
+        sum by (instance, name, role) (
+          (
+            rate(node_network_receive_bytes_total[1m])
+          and on (instance, device)
+            max by (instance, device) (if_speed_bps)
+          )
+        )
+
+    # Узловой TX (бит/с)
+    - record: node:bps:tx
+      expr: |
+        8 *
+        sum by (instance, name, role) (
+          (
+            rate(node_network_transmit_bytes_total[1m])
+          and on (instance, device)
+            max by (instance, device) (if_speed_bps)
+          )
+        )
+
+    # Суммарный трафик узла (бит/с)
+    - record: node:bps:total
+      expr: node:bps:rx + node:bps:tx

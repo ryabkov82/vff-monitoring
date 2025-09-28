@@ -1,0 +1,3 @@
+# HELP if_speed_bps Interface nominal speed in bits per second
+# TYPE if_speed_bps gauge
+if_speed_bps{device="{{ node_uplink_device_effective }}"} {{ node_uplink_speed_bps_effective }}
