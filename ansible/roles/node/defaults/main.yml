@@ -1,0 +1,20 @@
+# iperf3-server on nodes
+node_iperf_enable: true
+node_iperf_port: 5201
+# Биндимся на WG-IP узла (роль node уже вычисляет/берёт wg_ip)
+node_iperf_bind_ip: "{{ wg_ip }}"
+# доп. аргументы iperf3 -s (например: "--one-off" чтобы завершаться после сессии)
+node_iperf_extra_args: ""
+# открыть доступ через ufw только для хаба? (иначе для всей WG-подсети)
+node_iperf_ufw_allow: true
+node_iperf_ufw_from_hub_only: true
+
+# где лежит textfile collector
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+
+# дефолты для uplink, если в vpn_nodes не указано
+node_uplink_default_device: "ens3"
+node_uplink_default_speed_bps: 1000000000   # 1 Gbit/s
+
+# включить публикацию if_speed_bps через textfile
+node_if_speed_textfile_enabled: true

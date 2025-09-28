@@ -59,9 +59,7 @@
       ansible.builtin.assert:
         that:
           - wg_ip is defined
-          - (wg_ip | ipaddr) is not none
-          # если фильтра ipaddr нет:
-          # - (wg_ip | ansible.utils.ipaddr) is not none
+          - (wg_ip | ansible.utils.ipaddr) is not none
         fail_msg: "wg_ip не задан для {{ inventory_hostname }}. Задай wg_ip в hosts.ini/host_vars или в vpn_nodes."
 
     - name: Slurp node private key (remote)
@@ -100,6 +98,22 @@
         fail_msg: >-
           Hub public key is unknown. Ensure hub is reachable and has /etc/wireguard/{{ wg_iface }}.pub,
           or define 'hub_wg_pubkey' in vars.
+
+    - name: Pick hub host for node template
+      ansible.builtin.set_fact:
+        hub_host_effective: >-
+          {{
+            hub_host
+              | default( (groups['hub'][0]) if (groups['hub'] is defined and (groups['hub']|length)>0) else omit )
+          }}
+
+    - name: Assert we have a hub host
+      ansible.builtin.assert:
+        that:
+          - hub_host_effective is defined
+        fail_msg: >-
+          Cannot determine hub host. Define inventory group 'hub' with at least one host
+          or set variable 'hub_host' to a specific hostname.
 
     - name: Render node config
       ansible.builtin.template:

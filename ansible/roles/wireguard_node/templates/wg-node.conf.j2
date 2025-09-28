@@ -6,6 +6,6 @@ MTU = {{ wg_mtu }}
 [Peer]
 # hub
 PublicKey = {{ hub_wg_pubkey_effective }}
-Endpoint = {{ hub_public_endpoint }}:{{ wg_listen_port }}
-AllowedIPs = {{ hub_wg_ip }}/32
+Endpoint = {{ hostvars[hub_host_effective].hub_public_endpoint }}:{{ wg_listen_port }}
+AllowedIPs = {{ hostvars[hub_host_effective].hub_wg_ip }}/32
 PersistentKeepalive = 25

@@ -1,0 +1,27 @@
+# куда node_exporter читает textfile-метрики
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+
+# iperf3 клиентские настройки
+ru_probe_port_default: 5201
+ru_probe_duration: 10         # секунд
+ru_probe_parallel: 1
+
+# пропускать замеры при высокой загрузке линка (по iface:utilization:ratio)
+ru_probe_skip_busy: true
+ru_probe_busy_thresh: 0.50    # >50% — пропускаем
+
+# как ходить в Prometheus (для функции is_busy)
+ru_probe_prom_url: "http://127.0.0.1:{{ prometheus_port }}"
+ru_probe_prom_user: ""        # если basic auth не нужен — оставить пустым
+ru_probe_prom_pass: ""
+
+# расписание (часы по локальному времени хаба)
+ru_probe_schedule_hours: [3, 9, 15, 21]
+ru_probe_random_delay_sec: 900  # системный splay на таймере
+
+# фильтр целей: по умолчанию все vpn_nodes; можно сужать по роли
+ru_probe_target_roles: []     # например: ["vpn"] — пусто = без фильтра
+
+ru_probe_curl_timeout: 3
+ru_probe_connect_timeout: 2
+ru_probe_hard_timeout: 15

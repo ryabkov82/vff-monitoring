@@ -1,0 +1,41 @@
+---
+- name: IfSpeed | Derive uplink_device from vpn_nodes or defaults
+  ansible.builtin.set_fact:
+    node_uplink_device_effective: >-
+      {{
+        (
+          vpn_nodes
+          | selectattr('name', 'equalto', inventory_hostname)
+          | list | first | default({})
+        ).uplink_device
+        | default(node_uplink_default_device)
+      }}
+
+- name: IfSpeed | Derive uplink_speed_bps from vpn_nodes or defaults
+  ansible.builtin.set_fact:
+    node_uplink_speed_bps_effective: >-
+      {{
+        (
+          vpn_nodes
+          | selectattr('name', 'equalto', inventory_hostname)
+          | list | first | default({})
+        ).uplink_speed_bps
+        | default(node_uplink_default_speed_bps)
+      }}
+
+- name: IfSpeed | Ensure textfile dir exists
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: IfSpeed | Publish if_speed_bps via textfile
+  when: node_if_speed_textfile_enabled | bool
+  ansible.builtin.template:
+    src: if_speed.prom.j2
+    dest: "{{ node_exporter_textfile_dir }}/if_speed.prom"
+    owner: root
+    group: root
+    mode: "0644"

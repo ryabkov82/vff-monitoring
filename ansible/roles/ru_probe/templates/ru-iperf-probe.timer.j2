@@ -1,0 +1,13 @@
+[Unit]
+Description=Schedule RU iperf3 throughput probe
+
+[Timer]
+{% for h in ru_probe_schedule_hours %}
+OnCalendar=*-*-* {{ "%02d"|format(h) }}:00:00
+{% endfor %}
+RandomizedDelaySec={{ ru_probe_random_delay_sec }}
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

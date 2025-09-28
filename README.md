@@ -8,6 +8,7 @@
 - Роль node_exporter: [docs/node-exporter-role.md](docs/node-exporter-role.md)
 - Роль Nginx (reverse-proxy, certs, htpasswd): [docs/nginx-role.md](docs/nginx-role.md)
 - Роль Docker (установка Docker Engine + Compose v2): [docs/docker-role.md](docs/docker-role.md)
+- Роль RU Probe (iperf3 throughput): [docs/ru-probe-role.md](docs/ru-probe-role.md)
 
 ## Grafana — основные команды
 

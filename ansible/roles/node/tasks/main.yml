@@ -3,12 +3,12 @@
   ansible.builtin.package:
     name: [curl, jq]
     state: present
+  tags: [node]
 
-- name: Deploy scripts
-  ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "/usr/local/bin/{{ item | basename }}"
-    mode: "0755"
-  loop:
-    - speedtest_textfile_ookla.sh
-    - reality_svc_health.sh
+- name: Node | Include iperf3 server tasks
+  ansible.builtin.include_tasks: iperf.yml
+  tags: [node, node_iperf, iperf3]
+
+- name: Include if_speed tasks
+  ansible.builtin.import_tasks: if_speed.yml
+  tags: [node_if_speed]
