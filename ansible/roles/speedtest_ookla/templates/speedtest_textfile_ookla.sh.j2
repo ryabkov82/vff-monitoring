@@ -71,15 +71,27 @@ LANG=C LC_ALL=C
 prom_escape() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 ARGS=( --accept-license --accept-gdpr --format=json --progress=no )
-[[ -n "${SPEEDTEST_SERVER_ID:-}" ]] && ARGS+=( --server-id "$SPEEDTEST_SERVER_ID" ) || [[ -n "${SPEEDTEST_SERVER_ID:-}" ]] && ARGS+=( -s "$SPEEDTEST_SERVER_ID" )
+# Корректное добавление server-id (поддержка и длинного, и короткого флага)
+if [[ -n "${SPEEDTEST_SERVER_ID:-}" ]]; then
+  if "$SPEEDTEST_BIN" --help 2>&1 | grep -q -- '--server-id'; then
+    ARGS+=( --server-id "$SPEEDTEST_SERVER_ID" )
+  else
+    ARGS+=( -s "$SPEEDTEST_SERVER_ID" )
+  fi
+fi
 
-OUT="$("$SPEEDTEST_BIN" "${ARGS[@]}" 2>&1)"
-RC=$?
+# Запуск и сбор вывода
+OUT="$("$SPEEDTEST_BIN" "${ARGS[@]}" 2>&1 || true)"
+# Уберём \r и возьмём первую строку, начинающуюся с "{"
+CLEAN="$(printf '%s' "$OUT" | tr -d '\r')"
+JSON="$(printf '%s\n' "$CLEAN" | grep -m1 '^{' || true)"
 
-if [[ $RC -ne 0 ]]; then
+# Если JSON пустой или невалиден — мягкий фейл с логом головы RAW
+if [[ -z "$JSON" ]] || ! printf '%s' "$JSON" | jq -e . >/dev/null 2>&1; then
   NOW="$(date +%s)"
   {
-    echo "# speedtest exited with code $RC"
+    echo "# speedtest json parse failed"
+    printf '# raw_head: %s\n' "$(printf '%s' "$CLEAN" | head -c 300 | tr '\n' ' ')"
     printf 'vpn_speed_last_run_timestamp_seconds{name="%s",method="ookla"} %s\n' "$NODE_NAME" "$NOW"
     printf 'vpn_speed_success{name="%s",method="ookla"} 0\n' "$NODE_NAME"
   } >>"$TMP"
@@ -87,17 +99,17 @@ if [[ $RC -ne 0 ]]; then
   exit 0
 fi
 
-dl_Bps="$(jq -r '(.download.bandwidth // .download.bytesPerSecond // .download.bitsPerSecond? / 8) // empty | select(.!=null)' <<<"$OUT")"
-ul_Bps="$(jq -r '(.upload.bandwidth   // .upload.bytesPerSecond   // .upload.bitsPerSecond?   / 8) // empty | select(.!=null)' <<<"$OUT")"
+dl_Bps="$(jq -r '(.download.bandwidth // .download.bytesPerSecond // .download.bitsPerSecond? / 8) // empty | select(.!=null)' <<<"$JSON")"
+ul_Bps="$(jq -r '(.upload.bandwidth   // .upload.bytesPerSecond   // .upload.bitsPerSecond?   / 8) // empty | select(.!=null)' <<<"$JSON")"
 
-ping_ms="$(jq -r '.ping.latency // empty | select(.!=null)' <<<"$OUT")"
-jitter_ms="$(jq -r '.ping.jitter  // empty | select(.!=null)' <<<"$OUT")"
-loss_pct="$(jq -r '.packetLoss    // empty | select(.!=null)' <<<"$OUT")"
+ping_ms="$(jq -r '.ping.latency // empty | select(.!=null)' <<<"$JSON")"
+jitter_ms="$(jq -r '.ping.jitter  // empty | select(.!=null)' <<<"$JSON")"
+loss_pct="$(jq -r '.packetLoss    // empty | select(.!=null)' <<<"$JSON")"
 
-srv_name="$(jq -r '.server.name     // empty | select(.!=null)' <<<"$OUT" | prom_escape)"
-srv_loc="$(jq -r '.server.location  // empty | select(.!=null)' <<<"$OUT" | prom_escape)"
-srv_id="$(jq -r  '.server.id        // empty | select(.!=null)' <<<"$OUT")"
-res_url="$(jq -r '.result.url       // empty | select(.!=null)' <<<"$OUT")"
+srv_name="$(jq -r '.server.name     // empty | select(.!=null)' <<<"$JSON" | prom_escape)"
+srv_loc="$(jq -r '.server.location  // empty | select(.!=null)' <<<"$JSON" | prom_escape)"
+srv_id="$(jq -r  '.server.id        // empty | select(.!=null)' <<<"$JSON")"
+res_url="$(jq -r '.result.url       // empty | select(.!=null)' <<<"$JSON")"
 
 to_bps_from_Bps() { awk '{printf("%.0f",$1*8)}'; }
 to_sec_from_ms()  { awk '{printf("%.6f",$1/1000)}'; }

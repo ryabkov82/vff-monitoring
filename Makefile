@@ -141,22 +141,27 @@ ifndef HOST
 	$(error Usage: make add-node-check HOST=<hostname> [WG_IP=<ip>] [NODE_PORT=9100])
 endif
 	@echo ">> Resolve WG_IP for $(HOST)"
-	@WG_IP_TMP="$(WG_IP)"; \
+	@set -e; \
+	WG_IP_TMP="$(WG_IP)"; \
 	if [ -z "$$WG_IP_TMP" ]; then \
-	  WG_IP_TMP=$$(ansible -i $(INVENTORY) $(HOST) -m debug -a "var=wg_ip" $(ANSIBLE_FLAGS) 2>/dev/null \
-	    | sed -n 's/.*"wg_ip": "\(.*\)".*/\1/p' | tail -n1); \
+	  WG_IP_TMP=$$(ansible -i $(INVENTORY) $(HOST) -m debug \
+	    -a 'msg={{ (vpn_nodes | selectattr("name","equalto",inventory_hostname) | list | first).wg_ip | default("") }}' \
+	    $(ANSIBLE_FLAGS) 2>/dev/null \
+	    | sed -n 's/.*"msg": "\(.*\)".*/\1/p' | tail -n1); \
 	fi; \
-	if [ -z "$$WG_IP_TMP" ]; then \
-	  echo "!! Cannot resolve WG_IP for $(HOST). Pass WG_IP=<ip> or define wg_ip in inventory/group_vars."; exit 2; \
+	if [ -z "$$WG_IP_TMP" ] || [ "$$WG_IP_TMP" = "VARIABLE IS NOT DEFINED!" ]; then \
+	  echo "!! Cannot resolve WG_IP for $(HOST). Pass WG_IP=<ip> or define vpn_nodes[].wg_ip in group_vars."; \
+	  exit 2; \
 	fi; \
 	echo "   WG_IP=$$WG_IP_TMP"; \
 	PORT="$${NODE_PORT:-9100}"; \
 	echo ">> [1/3] WireGuard status on hub"; \
 	ansible -i $(INVENTORY) hub -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true; \
 	echo ">> [2/3] Ping from hub to $$WG_IP_TMP"; \
-	ansible -i $(INVENTORY) hub -m shell -a 'ping -c1 -W1 '"$$WG_IP_TMP" $(ANSIBLE_FLAGS); \
+	ansible -i $(INVENTORY) hub -m shell -a 'ping -c1 -W1 '$$WG_IP_TMP $(ANSIBLE_FLAGS); \
 	echo ">> [3/3] Prometheus target contains $$WG_IP_TMP"; \
-	ansible -i $(INVENTORY) hub -m shell -a 'curl -s http://127.0.0.1:9090/api/v1/targets?state=active | grep -F '"$$WG_IP_TMP" $(ANSIBLE_FLAGS) || (echo "!! Target for $$WG_IP_TMP not found in Prometheus active targets"; exit 3); \
+	ansible -i $(INVENTORY) hub -m shell -a 'curl -s http://127.0.0.1:9090/api/v1/targets?state=active | grep -F '$$WG_IP_TMP $(ANSIBLE_FLAGS) \
+	  || (echo "!! Target for $$WG_IP_TMP not found in Prometheus active targets"; exit 3); \
 	echo "✓ Checks passed for $(HOST) (WG_IP=$$WG_IP_TMP, node_exporter port=$$PORT)"
 
 add-node-all: ## Полный онбординг: add-node + add-node-check
@@ -207,6 +212,32 @@ endif
 node-if-speed-vpn: ## Опубликовать/обновить if_speed_bps на всей группе vpn
 	@# Пример: make node-if-speed-vpn
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_if_speed $(ANSIBLE_FLAGS)
+
+# ---------------------------
+# IPERF3: проверки на узле
+# ---------------------------
+.PHONY: iperf-status iperf-logs
+
+# Проверить статус сервиса на узле (порт можно переопределить: PORT=5201)
+# Пример: make iperf-status HOST=nl-ams-2
+# Пример: make iperf-status HOST=nl-ams-2 PORT=5202
+iperf-status:
+ifndef HOST
+	$(error Usage: make iperf-status HOST=<hostname> [PORT=5201])
+endif
+	@PORT="$${PORT:-5201}"; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl status --no-pager iperf3@'$$PORT $(ANSIBLE_FLAGS) || true
+
+# Показать логи сервиса (хвост), можно задать TAIL=200 и PORT=5201
+# Пример: make iperf-logs HOST=nl-ams-2
+# Пример: make iperf-logs HOST=nl-ams-2 PORT=5202 TAIL=400
+iperf-logs:
+ifndef HOST
+	$(error Usage: make iperf-logs HOST=<hostname> [PORT=5201] [TAIL=200])
+endif
+	@PORT="$${PORT:-5201}"; \
+	T="$${TAIL:-200}"; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u iperf3@'$$PORT' -n '$$T' --no-pager' $(ANSIBLE_FLAGS) || true
 
 # ---------------------------
 # SPEEDTEST (Ookla): помощники

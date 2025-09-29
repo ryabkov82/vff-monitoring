@@ -5,5 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User={{ node_speedtest_user | default('root') }}
 ExecStart=/usr/local/bin/speedtest_textfile_ookla.sh
 Nice=10
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=600
