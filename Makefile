@@ -1,118 +1,142 @@
-ANSIBLE ?= ansible-playbook
-INVENTORY ?= ansible/hosts.ini
-PLAY ?= ansible/site.yml
-ANSIBLE_FLAGS ?=
+# === БАЗОВЫЕ НАСТРОЙКИ ===
+# Можно переопределить переменными окружения или в командной строке:
+#   make hub ANSIBLE_FLAGS=--ask-vault-pass
+ANSIBLE        ?= ansible-playbook
+INVENTORY      ?= ansible/hosts.ini
+PLAY           ?= ansible/site.yml
+ANSIBLE_FLAGS  ?=
 
-.PHONY: help ping nginx docker node-exporter-hub hub nodes all
+# Где лежит docker compose стек на хабе.
+STACK          ?= /opt/vff-monitoring/docker-compose.yml
+# Где хранятся textfile-метрики node_exporter на хабе.
+TEXTFILE_DIR   ?= /var/lib/node_exporter/textfile
+# Сколько строк хвоста логов показывать по умолчанию.
+TAIL           ?= 200
 
-help:
-	@echo "targets: ping | nginx | docker | node-exporter-hub | hub | nodes | prom-rules | prom-rules-check | prom-health | grafana | grafana-dashboards | grafana-provisioning | grafana-health | all"
-	@echo "usage: make nginx [ANSIBLE_FLAGS=--ask-vault-pass]"
-	@echo "usage: make grafana-dashboards [ANSIBLE_FLAGS=\"-e grafana_dashboards_use_rsync=true\"]"
-	@echo "usage: make prom-rules [ANSIBLE_FLAGS=--ask-vault-pass]"
+# ---------------------------
+# СПРАВКА
+# ---------------------------
+.PHONY: help
+help: ## Показать справку и примеры использования
+	@echo "Make targets (vff-monitoring)\n"
+	@grep -E '^[a-zA-Z0-9_.-]+:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS=":.*?## "}; {printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2}'
+	@echo "\nПримеры запуска:"
+	@echo "  make nginx ANSIBLE_FLAGS=--ask-vault-pass"
+	@echo '  make grafana-dashboards ANSIBLE_FLAGS="-e grafana_dashboards_use_rsync=true"'
+	@echo "  make prom-rules ANSIBLE_FLAGS=--ask-vault-pass"
+	@echo "  make add-node HOST=nl-ams-2"
+	@echo "  make node-bootstrap HOST=nl-ams-2"
 
-ping:
+# ---------------------------
+# БАЗОВЫЕ ОПЕРАЦИИ
+# ---------------------------
+.PHONY: ping nginx docker node-exporter-hub hub hub-full nodes all
+
+ping: ## Проверка доступности всех хостов (ansible ping)
+	@# Пример: make ping
 	ansible -i $(INVENTORY) all -m ping
 
-nginx:
+nginx: ## Настроить Nginx на хабе (reverse-proxy, certs, htpasswd)
+	@# Пример: make nginx ANSIBLE_FLAGS=--ask-vault-pass
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags nginx $(ANSIBLE_FLAGS)
 
-docker:
+docker: ## Установить/обновить Docker/Compose на хабе
+	@# Пример: make docker
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags docker $(ANSIBLE_FLAGS)
 
-# Установить/обновить node_exporter только на хабе
-node-exporter-hub:
+node-exporter-hub: ## Установить/обновить node_exporter только на хабе
+	@# Пример: make node-exporter-hub
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags node_exporter $(ANSIBLE_FLAGS)
 
-hub:
+hub: ## Применить роль 'hub' (рендер targets/rules и пр.) на хабе
+	@# Пример: make hub
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags hub $(ANSIBLE_FLAGS)
 
-hub-full:
+hub-full: ## Запустить весь плей для группы hub (все роли для хаба)
+	@# Пример: make hub-full
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub $(ANSIBLE_FLAGS)
 
-nodes:
+nodes: ## Запустить весь плей для группы vpn (все роли для узлов)
+	@# Пример: make nodes
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn $(ANSIBLE_FLAGS)
 
-all:
+all: ## Выполнить site.yml на всех хостах
+	@# Пример: make all
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) $(ANSIBLE_FLAGS)
 
-# где лежит compose на хабе
-STACK := /opt/vff-monitoring/docker-compose.yml
-TAIL ?= 200
-
+# ---------------------------
+# HUB: ВСПОМОГАТЕЛЬНЫЕ КОМАНДЫ ДЛЯ docker-compose
+# ---------------------------
 .PHONY: status logs flogs logs-% flogs-%
 
-# показать состояние контейнеров на хабе
-status:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'docker compose -f $(STACK) ps' $(ANSIBLE_FLAGS)
+status: ## Показать состояние контейнеров (docker compose ps) на хабе
+	@# Пример: make status
+	ansible -i $(INVENTORY) hub -m shell -a 'docker compose -f $(STACK) ps' $(ANSIBLE_FLAGS)
 
-# логи всех сервисов (хвост)
-logs:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'docker compose -f $(STACK) logs --tail=$(TAIL)' $(ANSIBLE_FLAGS)
+logs: ## Показать хвост логов всех сервисов (TAIL=200 по умолчанию)
+	@# Пример: make logs TAIL=500
+	ansible -i $(INVENTORY) hub -m shell -a 'docker compose -f $(STACK) logs --tail=$(TAIL)' $(ANSIBLE_FLAGS)
 
-# live-логи всех сервисов (follow)
-flogs:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'docker compose -f $(STACK) logs -f' $(ANSIBLE_FLAGS)
+flogs: ## Следить за логами всех сервисов (-f)
+	@# Пример: make flogs
+	ansible -i $(INVENTORY) hub -m shell -a 'docker compose -f $(STACK) logs -f' $(ANSIBLE_FLAGS)
 
-# логи конкретного сервиса, например: make logs-prometheus  или  make logs-grafana
-logs-%:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'docker compose -f $(STACK) logs --tail=$(TAIL) $*' $(ANSIBLE_FLAGS)
+logs-%: ## Показать хвост логов конкретного сервиса (по имени)
+	@# Пример: make logs-prometheus  или  make logs-grafana
+	ansible -i $(INVENTORY) hub -m shell -a 'docker compose -f $(STACK) logs --tail=$(TAIL) $*' $(ANSIBLE_FLAGS)
 
-# live-логи конкретного сервиса: make flogs-prometheus
-flogs-%:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'docker compose -f $(STACK) logs -f $*' $(ANSIBLE_FLAGS)
+flogs-%: ## Следить за логами конкретного сервиса (по имени)
+	@# Пример: make flogs-prometheus
+	ansible -i $(INVENTORY) hub -m shell -a 'docker compose -f $(STACK) logs -f $*' $(ANSIBLE_FLAGS)
 
-.PHONY: wg-node wg-hub wg
+# ---------------------------
+# WIREGUARD: УЗЛЫ + ХАБ
+# ---------------------------
+.PHONY: wg-node wg-hub wg wg-status wg-show-% add-node add-node-check add-node-all
 
-# только узлы (роль wireguard_node)
-wg-node:
+wg-node: ## Применить только роль wireguard_node на всех vpn-узлах (tag: wg_node)
+	@# Пример: make wg-node
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags wg_node $(ANSIBLE_FLAGS)
 
-# только хаб (роль wireguard_hub)
-wg-hub:
+wg-hub: ## Применить только роль wireguard_hub на хабе (tag: wg_hub)
+	@# Пример: make wg-hub
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags wg_hub $(ANSIBLE_FLAGS)
 
-# всё WireGuard сразу (хаб + узлы)
-wg:
+wg: ## Применить все задачи WireGuard (хаб + узлы) по тегу wg
+	@# Пример: make wg
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg $(ANSIBLE_FLAGS)
 
-wg-status:
-	ansible -i $(INVENTORY) hub -m shell -a 'wg show'
-	ansible -i $(INVENTORY) vpn -m shell -a 'wg show'
+wg-status: ## Показать 'wg show' на хабе и на узлах
+	@# Пример: make wg-status
+	ansible -i $(INVENTORY) hub -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true
+	ansible -i $(INVENTORY) vpn -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true
 
-.PHONY: add-node
+wg-show-%: ## Показать 'wg show' на конкретном хосте (по имени)
+	@# Пример: make wg-show-nl-ams-1
+	ansible -i $(INVENTORY) $* -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true
 
-# Прокачать новый узел: WG на узле → обновить peers на хабе → перегенерить hub-конфиги и reload Prometheus
-# Пример: make add-node HOST=nl-ams-2
-add-node:
+add-node: ## Онбординг новой ноды: WG + агенты (node+node_exporter+speedtest) на HOST -> wg_hub на хабе -> hub bundle
+	@# Пример: make add-node HOST=nl-ams-2
 ifndef HOST
 	$(error Usage: make add-node HOST=<hostname>)
 endif
-	@echo ">> [1/3] WireGuard on node: $(HOST)"
+	@echo ">> [1/4] WireGuard on node: $(HOST)"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_node --limit $(HOST) $(ANSIBLE_FLAGS)
-	@echo ">> [2/3] Update peers on hub"
+
+	@echo ">> [2/4] Monitoring agents on node (node + node_exporter + speedtest_ookla): $(HOST)"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags node,node_exporter,speedtest_ookla --limit $(HOST) $(ANSIBLE_FLAGS)
+
+	@echo ">> [3/4] Update peers on hub"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_hub --limit hub $(ANSIBLE_FLAGS)
-	@echo ">> [3/3] Render targets/rules & reload Prometheus"
+
+	@echo ">> [4/4] Apply hub bundle (render targets/rules, etc.)"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags hub --limit hub $(ANSIBLE_FLAGS)
-	@echo "✓ Done: node $(HOST) onboarded"
 
-.PHONY: add-node-check add-node-all
+	@echo "✓ Done: node $(HOST) onboarded (WG + agents installed, hub updated)"
 
-# Проверить новый узел после онбординга:
-# - wg show на хабе
-# - ping WG-IP узла с хаба
-# - наличие таргета в Prometheus
-#
-# Параметры:
-#   HOST=<hostname>   — обязателен (имя из hosts.ini)
-#   WG_IP=<ip>        — опционален; если не задан, попробуем прочитать var=wg_ip на самом хосте
-#   NODE_PORT=9100    — порт node_exporter (по умолчанию 9100)
-add-node-check:
+add-node-check: ## Проверить узел после онбординга (wg show, ping wg_ip, наличие таргета в Prometheus)
+	@# Пример: make add-node-check HOST=nl-ams-2  или  make add-node-check HOST=nl-ams-2 WG_IP=10.77.0.22
 ifndef HOST
 	$(error Usage: make add-node-check HOST=<hostname> [WG_IP=<ip>] [NODE_PORT=9100])
 endif
@@ -135,196 +159,177 @@ endif
 	ansible -i $(INVENTORY) hub -m shell -a 'curl -s http://127.0.0.1:9090/api/v1/targets?state=active | grep -F '"$$WG_IP_TMP" $(ANSIBLE_FLAGS) || (echo "!! Target for $$WG_IP_TMP not found in Prometheus active targets"; exit 3); \
 	echo "✓ Checks passed for $(HOST) (WG_IP=$$WG_IP_TMP, node_exporter port=$$PORT)"
 
-# Полный онбординг: WG на узле -> peers на хабе -> обновить hub -> проверки
-add-node-all:
+add-node-all: ## Полный онбординг: add-node + add-node-check
+	@# Пример: make add-node-all HOST=nl-ams-2
 ifndef HOST
 	$(error Usage: make add-node-all HOST=<hostname> [WG_IP=<ip>] [NODE_PORT=9100])
 endif
 	@$(MAKE) add-node HOST=$(HOST) $(if $(ANSIBLE_FLAGS),ANSIBLE_FLAGS=$(ANSIBLE_FLAGS))
 	@$(MAKE) add-node-check HOST=$(HOST) $(if $(WG_IP),WG_IP=$(WG_IP)) $(if $(NODE_PORT),NODE_PORT=$(NODE_PORT)) $(if $(ANSIBLE_FLAGS),ANSIBLE_FLAGS=$(ANSIBLE_FLAGS))
 
-.PHONY: node-exporter node-exporter-vpn
+# ---------------------------
+# МОНІТОРИНГОВЫЕ АГЕНТЫ (узлы)
+# ---------------------------
+.PHONY: node-bootstrap node-only node-exporter node-exporter-vpn node-if-speed node-if-speed-vpn
 
-# Установить/обновить node_exporter на одном узле
-# Пример: make node-exporter HOST=nl-ams-1
-node-exporter:
+node-bootstrap: ## Полный bootstrap на HOST: node (iperf3+if_speed) + node_exporter + speedtest_ookla
+	@# Пример: make node-bootstrap HOST=nl-ams-2
+ifndef HOST
+	$(error Usage: make node-bootstrap HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node,node_exporter,speedtest_ookla $(ANSIBLE_FLAGS)
+
+node-only: ## Только роль 'node' (iperf3 + if_speed) на HOST
+	@# Пример: make node-only HOST=nl-ams-2
+ifndef HOST
+	$(error Usage: make node-only HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node $(ANSIBLE_FLAGS)
+
+node-exporter: ## Установить/обновить node_exporter на HOST
+	@# Пример: make node-exporter HOST=nl-ams-2
 ifndef HOST
 	$(error Usage: make node-exporter HOST=<hostname> [ANSIBLE_FLAGS="..."])
 endif
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_exporter $(ANSIBLE_FLAGS)
 
-# Прогнать node_exporter на всей группе vpn
-node-exporter-vpn:
+node-exporter-vpn: ## Установить/обновить node_exporter на всей группе vpn
+	@# Пример: make node-exporter-vpn
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_exporter $(ANSIBLE_FLAGS)
 
-# --- Grafana shortcuts --------------------------------------------------------
-.PHONY: grafana grafana-dashboards grafana-dashboards-check grafana-provisioning grafana-provisioning-check grafana-health
-
-# Все графановские задачи (setup + provisioning + dashboards)
-grafana:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana $(ANSIBLE_FLAGS)
-
-# Только копирование/обновление дашбордов (hot-reload, без рестарта Grafana)
-grafana-dashboards:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards $(ANSIBLE_FLAGS)
-
-# Dry-run дашбордов с diff
-grafana-dashboards-check:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards --check --diff $(ANSIBLE_FLAGS)
-
-.PHONY: grafana-token
-
-# Создание сервисного пользователя Grafana и загрузка токена в .env.grafana
-# make grafana-token-ansible ANSIBLE_FLAGS='-e grafana_token_refresh=true'
-grafana-token:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_token $(ANSIBLE_FLAGS)
-
-.PHONY: grafana-pull
-
-# Экспортировать дашборды через роль Ansible (все или по UID)
-# Примеры:
-#   make grafana-pull-ansible ANSIBLE_FLAGS='--tags grafana_export -e grafana_api_url=http://127.0.0.1:3000 -e grafana_admin_token=glsa_...'
-#   make grafana-pull-ansible ANSIBLE_FLAGS='--tags grafana_export -e grafana_export_uids=["availability"]'
-grafana-pull:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_export $(ANSIBLE_FLAGS)
-
-# Только provisioning (datasources/dashboards.yml) — вызовет notify: Restart grafana
-grafana-provisioning:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning $(ANSIBLE_FLAGS)
-
-# Dry-run provisioning с diff
-grafana-provisioning-check:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning --check --diff $(ANSIBLE_FLAGS)
-
-# Быстрый healthcheck Grafana на хабе
-grafana-health:
-	ansible -i $(INVENTORY) hub -m shell \
-	  -a 'curl -fsS http://127.0.0.1:$(grafana_port)/api/health >/dev/null && echo OK || (echo FAIL && exit 1)' $(ANSIBLE_FLAGS)
-
-.PHONY: prom-rules prom-rules-check prom-health
-
-# Применить только правила Prometheus (recording/alerts) + health-checks
-# Теги берутся из roles/hub/tasks/prometheus.yml (prometheus) и health.yml (health)
-prom-rules:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
-
-# Dry-run правил с diff + health (health выполнится «вхолостую» и покажет, что дернётся)
-prom-rules-check:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" --check --diff $(ANSIBLE_FLAGS)
-
-# Запустить только health-проверки (на случай, если рулы уже применены)
-prom-health:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags health $(ANSIBLE_FLAGS)
-
-# === RU iperf3 probe on hub ===
-.PHONY: ru-probe ru-probe-run ru-probe-status ru-probe-logs ru-probe-metrics
-
-# Где лежат метрики textfile на хабе
-TEXTFILE_DIR ?= /var/lib/node_exporter/textfile
-TAIL ?= 200
-
-# Применить роль ru_probe на хабе (скрипт, юниты, таймер)
-ru-probe:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags ru_probe $(ANSIBLE_FLAGS)
-
-# Запустить разово измерение прямо сейчас
-ru-probe-run:
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
-
-# Проверить состояние таймера/сервиса
-ru-probe-status:
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
-
-# Логи последнего запуска
-ru-probe-logs:
-	ansible -i $(INVENTORY) hub -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
-
-# Посмотреть опубликованные метрики (если файл уже создан)
-ru-probe-metrics:
-	ansible -i $(INVENTORY) hub -m shell -a 'test -f $(TEXTFILE_DIR)/ru_iperf.prom && cat $(TEXTFILE_DIR)/ru_iperf.prom || echo "no metrics yet"' $(ANSIBLE_FLAGS)
-
-# === iperf3 on nodes ===
-.PHONY: iperf-node iperf-vpn iperf-status iperf-logs
-
-# Установить/обновить iperf3-сервер на ОДНОМ узле (нужен HOST=...)
-# Пример: make iperf-node HOST=nl-ams-1
-iperf-node:
-ifndef HOST
-	$(error Usage: make iperf-node HOST=<hostname> [ANSIBLE_FLAGS="..."])
-endif
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_iperf $(ANSIBLE_FLAGS)
-
-# Установить/обновить iperf3-сервер на ВСЕЙ группе vpn
-iperf-vpn:
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_iperf $(ANSIBLE_FLAGS)
-
-# Проверить статус сервиса на узле (порт можно переопределить: PORT=5201)
-iperf-status:
-ifndef HOST
-	$(error Usage: make iperf-status HOST=<hostname> [PORT=5201])
-endif
-	@PORT="$${PORT:-5201}"; \
-	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl status --no-pager iperf3@'$$PORT $(ANSIBLE_FLAGS) || true
-
-# Логи сервиса (хвост), можно задать TAIL=200 и PORT=5201
-iperf-logs:
-ifndef HOST
-	$(error Usage: make iperf-logs HOST=<hostname> [PORT=5201] [TAIL=200])
-endif
-	@PORT="$${PORT:-5201}"; \
-	T="$${TAIL:-200}"; \
-	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u iperf3@'$$PORT' -n '$$T' --no-pager' $(ANSIBLE_FLAGS) || true
-
-.PHONY: node-if-speed node-if-speed-vpn
-
-# Публикация if_speed_bps (textfile) на ОДНОМ узле
-# Пример: make node-if-speed HOST=nl-ams-1
-node-if-speed:
+node-if-speed: ## Опубликовать/обновить if_speed_bps (textfile) на HOST
+	@# Пример: make node-if-speed HOST=nl-ams-2
 ifndef HOST
 	$(error Usage: make node-if-speed HOST=<hostname> [ANSIBLE_FLAGS="..."])
 endif
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags node_if_speed $(ANSIBLE_FLAGS)
 
-# Публикация if_speed_bps (textfile) на всей группе vpn
-node-if-speed-vpn:
+node-if-speed-vpn: ## Опубликовать/обновить if_speed_bps на всей группе vpn
+	@# Пример: make node-if-speed-vpn
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_if_speed $(ANSIBLE_FLAGS)
 
-# ==== Speedtest (Ookla) ad-hoc helpers ====
+# ---------------------------
+# SPEEDTEST (Ookla): помощники
+# ---------------------------
+.PHONY: node-speedtest node-speedtest-all node-speedtest-run node-speedtest-timer-enable node-speedtest-timer-disable node-speedtest-status node-speedtest-logs node-speedtest-metrics
 
-# Установка/обновление speedtest на КОНКРЕТНОМ узле (скрипт+юниты+таймер+бинарь)
-node-speedtest:
+node-speedtest: ## Установить/обновить speedtest на HOST (скрипт, юниты, таймер, бинарь)
+	@# Пример: make node-speedtest HOST=nl-ams-2
+ifndef HOST
+	$(error Usage: make node-speedtest HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit "$(HOST)" --tags speedtest_ookla,speedtest_install $(ANSIBLE_FLAGS)
 
-# Установка/обновление speedtest на ВСЕХ узлах группы (скрипт+юниты+таймер+бинарь)
-node-speedtest-all:
+node-speedtest-all: ## Установить/обновить speedtest на всех vpn-узлах
+	@# Пример: make node-speedtest-all
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags speedtest_ookla,speedtest_install $(ANSIBLE_FLAGS)
 
-# Разовый запуск сервиса
-node-speedtest-run:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
-	  -a 'name=speedtest-textfile-ookla.service state=started' || true
+node-speedtest-run: ## Разовый запуск сервиса speedtest на HOST
+	@# Пример: make node-speedtest-run HOST=nl-ams-2
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd -a 'name=speedtest-textfile-ookla.service state=started' || true
 
-# Таймер включить/выключить
-node-speedtest-timer-enable:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
-	  -a 'name=speedtest-textfile-ookla.timer enabled=yes state=started'
+node-speedtest-timer-enable: ## Включить и запустить таймер speedtest на HOST
+	@# Пример: make node-speedtest-timer-enable HOST=nl-ams-2
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd -a 'name=speedtest-textfile-ookla.timer enabled=yes state=started'
 
-node-speedtest-timer-disable:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
-	  -a 'name=speedtest-textfile-ookla.timer enabled=no state=stopped'
+node-speedtest-timer-disable: ## Выключить и остановить таймер speedtest на HOST
+	@# Пример: make node-speedtest-timer-disable HOST=nl-ams-2
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd -a 'name=speedtest-textfile-ookla.timer enabled=no state=stopped'
 
-# Статусы (service + timer)
-node-speedtest-status:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
-	  -a 'systemctl --no-pager --full status speedtest-textfile-ookla.service || true; echo; systemctl --no-pager --full status speedtest-textfile-ookla.timer || true'
+node-speedtest-status: ## Показать статусы service/timer speedtest на HOST
+	@# Пример: make node-speedtest-status HOST=nl-ams-2
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell -a 'systemctl --no-pager --full status speedtest-textfile-ookla.service || true; echo; systemctl --no-pager --full status speedtest-textfile-ookla.timer || true'
 
-# Логи последнего запуска (2 часа)
-node-speedtest-logs:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
-	  -a 'journalctl -u speedtest-textfile-ookla.service -n 200 --since "-2h" --no-pager || true'
+node-speedtest-logs: ## Показать логи speedtest за последние 2 часа на HOST
+	@# Пример: make node-speedtest-logs HOST=nl-ams-2 TAIL=400
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell -a 'journalctl -u speedtest-textfile-ookla.service -n 200 --since "-2h" --no-pager || true'
 
-# Экспортируемые метрики textfile
-node-speedtest-metrics:
-	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
-	  -a 'f=/var/lib/node_exporter/textfile/speedtest_ookla.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"'
+node-speedtest-metrics: ## Показать экспортируемые textfile-метрики speedtest на HOST
+	@# Пример: make node-speedtest-metrics HOST=nl-ams-2
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell -a 'f=$(TEXTFILE_DIR)/speedtest_ookla.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"'
+
+# ---------------------------
+# GRAFANA
+# ---------------------------
+.PHONY: grafana grafana-dashboards grafana-dashboards-check grafana-provisioning grafana-provisioning-check grafana-health grafana-token grafana-pull
+
+grafana: ## Полная настройка Grafana на хабе (provisioning + dashboards)
+	@# Пример: make grafana
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana $(ANSIBLE_FLAGS)
+
+grafana-dashboards: ## Скопировать/обновить дашборды (горячо, без рестарта)
+	@# Пример: make grafana-dashboards ANSIBLE_FLAGS='-e grafana_dashboards_use_rsync=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards $(ANSIBLE_FLAGS)
+
+grafana-dashboards-check: ## Dry-run дашбордов с diff
+	@# Пример: make grafana-dashboards-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_dashboards --check --diff $(ANSIBLE_FLAGS)
+
+grafana-token: ## Создать сервисного пользователя и записать токен в .env.grafana
+	@# Пример: make grafana-token ANSIBLE_FLAGS='-e grafana_token_refresh=true'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_token $(ANSIBLE_FLAGS)
+
+grafana-pull: ## Экспортировать дашборды через роль (можно ограничить UID'ами)
+	@# Примеры:
+	@#   make grafana-pull ANSIBLE_FLAGS='--tags grafana_export -e grafana_api_url=http://127.0.0.1:3000 -e grafana_admin_token=glsa_...'
+	@#   make grafana-pull ANSIBLE_FLAGS='--tags grafana_export -e grafana_export_uids=["availability"]'
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_export $(ANSIBLE_FLAGS)
+
+grafana-provisioning: ## Применить provisioning (datasources/dashboards.yml), вызовет рестарт Grafana
+	@# Пример: make grafana-provisioning
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning $(ANSIBLE_FLAGS)
+
+grafana-provisioning-check: ## Dry-run provisioning с diff
+	@# Пример: make grafana-provisioning-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags grafana_provisioning --check --diff $(ANSIBLE_FLAGS)
+
+grafana-health: ## Простой healthcheck Grafana (http://127.0.0.1:3000/api/health)
+	@# Пример: make grafana-health
+	ansible -i $(INVENTORY) hub -m shell -a 'curl -fsS http://127.0.0.1:3000/api/health >/dev/null && echo OK || (echo FAIL && exit 1)' $(ANSIBLE_FLAGS)
+
+# ---------------------------
+# PROMETHEUS
+# ---------------------------
+.PHONY: prom-rules prom-rules-check prom-health prom-reload
+
+prom-rules: ## Применить только правила Prometheus (recording/alerts) + health
+	@# Пример: make prom-rules
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
+
+prom-rules-check: ## Dry-run правил с diff + health
+	@# Пример: make prom-rules-check
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" --check --diff $(ANSIBLE_FLAGS)
+
+prom-health: ## Выполнить только health-проверки стека мониторинга
+	@# Пример: make prom-health
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags health $(ANSIBLE_FLAGS)
+
+prom-reload: ## Горячая перезагрузка Prometheus (нужен --web.enable-lifecycle)
+	@# Пример: make prom-reload
+	curl -fsS -X POST http://127.0.0.1:9090/-/reload || true
+
+# ---------------------------
+# RU IPERF3 ПРОБА (на хабе)
+# ---------------------------
+.PHONY: ru-probe ru-probe-run ru-probe-status ru-probe-logs ru-probe-metrics
+
+ru-probe: ## Применить роль ru_probe на хабе (скрипт, юниты, таймер)
+	@# Пример: make ru-probe
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags ru_probe $(ANSIBLE_FLAGS)
+
+ru-probe-run: ## Запустить разово RU iperf3 probe прямо сейчас
+	@# Пример: make ru-probe-run
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
+
+ru-probe-status: ## Показать статус таймера/сервиса RU iperf3 probe
+	@# Пример: make ru-probe-status
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
+
+ru-probe-logs: ## Показать логи последнего запуска RU iperf3 probe (TAIL=200)
+	@# Пример: make ru-probe-logs TAIL=500
+	ansible -i $(INVENTORY) hub -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
+
+ru-probe-metrics: ## Показать опубликованные метрики RU iperf3 (если уже есть)
+	@# Пример: make ru-probe-metrics
+	ansible -i $(INVENTORY) hub -m shell -a 'f=$(TEXTFILE_DIR)/ru_iperf.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "no metrics yet"' $(ANSIBLE_FLAGS)
