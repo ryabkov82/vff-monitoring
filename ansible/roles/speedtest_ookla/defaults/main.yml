@@ -26,3 +26,6 @@ node_speedtest_prom_url: "https://prom.vpn-for-friends.com"
 node_speedtest_prom_user: "{{ prom_user | default('') }}"
 node_speedtest_prom_pass: "{{ prom_pass | default('') }}"
 node_speedtest_is_busy_debug: "0"
+
+# кто запускает speedtest job
+node_speedtest_user: root
