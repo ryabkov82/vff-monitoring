@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule Ookla speedtest → textfile
+
+[Timer]
+OnCalendar={{ node_speedtest_oncalendar }}
+RandomizedDelaySec={{ node_speedtest_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

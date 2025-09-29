@@ -1,0 +1,285 @@
+---
+# Speedtest (Ookla) → node_exporter textfile (минимальный набор)
+# Ожидаемые vars (см. defaults):
+# - node_speedtest_enabled: true|false
+# - node_speedtest_install: true|false
+# - node_speedtest_textdir: /var/lib/node_exporter/textfile
+# - node_speedtest_bin: /usr/bin/speedtest
+# - node_speedtest_timer_enabled: true|false
+# - node_speedtest_oncalendar: "*-*-* 06,18:00:00"
+# - node_speedtest_randomized_delay_sec: 900
+#
+# Для Prometheus API basic-auth, если нужно:
+# - node_speedtest_prom_url
+# - node_speedtest_prom_user
+# - node_speedtest_prom_pass
+
+- name: Speedtest | Ensure textfile directory exists
+  ansible.builtin.file:
+    path: "{{ node_speedtest_textdir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: node_speedtest_enabled | bool
+  tags: [speedtest_ookla]
+
+- name: Speedtest | Install deps (jq, curl)
+  ansible.builtin.package:
+    name:
+      - jq
+      - curl
+    state: present
+  when: node_speedtest_enabled | bool
+  tags: [speedtest_ookla]
+
+# ---- Установка официального бинаря Ookla Speedtest CLI (по флажку) ----
+
+# 0) Предварительная проверка: бинарь уже установлен?
+- name: Speedtest | Check existing binary
+  ansible.builtin.command: "{{ node_speedtest_bin }} --version"
+  register: _speedtest_ver
+  changed_when: false
+  failed_when: false
+  tags: [speedtest_install, speedtest_ookla]
+
+- name: Speedtest | Set flag if present
+  ansible.builtin.set_fact:
+    speedtest_present: "{{ _speedtest_ver.rc == 0 }}"
+  tags: [speedtest_install, speedtest_ookla]
+
+# Debian/Ubuntu
+# 1) Попытка через пакетный репозиторий (там, где поддержан)
+- name: Speedtest | Try repo install on Debian/Ubuntu (non-fatal)
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - ansible_os_family == "Debian"
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+  block:
+    - name: Ensure prerequisites (repo)
+      ansible.builtin.apt:
+        name: [ca-certificates, gnupg2, curl]
+        state: present
+        update_cache: true
+
+    - name: Add Ookla APT repo via official script (non-fatal)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL https://install.speedtest.net/app/cli/install.deb.sh | bash
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/sources.list.d/ookla_speedtest-cli.list
+      register: _ookla_repo_add_deb
+      failed_when: false
+      changed_when: _ookla_repo_add_deb.rc == 0
+
+    - name: Install speedtest package (Debian/Ubuntu) (non-fatal)
+      ansible.builtin.apt:
+        name: speedtest
+        state: present
+        update_cache: true
+      register: _ookla_pkg_deb
+      failed_when: false
+
+- name: Speedtest | Try repo install on RHEL family (non-fatal)
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - ansible_os_family == "RedHat"
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+  block:
+    - name: Ensure prerequisites (repo)
+      ansible.builtin.yum:
+        name: curl
+        state: present
+
+    - name: Add Ookla YUM repo via official script (non-fatal)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | bash
+      args:
+        executable: /bin/bash
+        creates: /etc/yum.repos.d/ookla_speedtest-cli.repo
+      register: _ookla_repo_add_rpm
+      failed_when: false
+      changed_when: _ookla_repo_add_rpm.rc == 0
+
+    - name: Install speedtest package (RHEL) (non-fatal)
+      ansible.builtin.yum:
+        name: speedtest
+        state: present
+      register: _ookla_pkg_rpm
+      failed_when: false
+
+# 2) Решаем — получилось ли через repo
+- name: Speedtest | Decide if repo install succeeded
+  ansible.builtin.set_fact:
+    _speedtest_repo_ok: >-
+      {{
+        (_ookla_pkg_deb is defined and _ookla_pkg_deb.rc is defined and _ookla_pkg_deb.rc == 0)
+        or
+        (_ookla_pkg_rpm is defined and _ookla_pkg_rpm.rc is defined and _ookla_pkg_rpm.rc == 0)
+      }}
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# 3) Fallback: direct download tar.gz, если repo не сработал (или не пытались)
+
+- name: Speedtest | Map architecture for direct download
+  ansible.builtin.set_fact:
+    _speedtest_arch: >-
+      {{
+        {
+          'x86_64': 'x86_64',
+          'amd64' : 'x86_64',
+          'aarch64': 'aarch64',
+          'arm64'  : 'aarch64',
+          'armv7l' : 'armhf',
+          'armv6l' : 'armhf',
+          'i386'   : 'i386',
+          'i686'   : 'i386'
+        }[ansible_architecture | lower]
+        | default('x86_64')
+      }}
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# Версию и URL даём переменными, чтобы не гадать имена файлов.
+# Пример в group_vars/all.yml:
+#   node_speedtest_version: "1.2.0"
+#   node_speedtest_direct_url: "https://install.speedtest.net/app/cli/ookla-speedtest-{{ node_speedtest_version }}-linux-{{ _speedtest_arch }}.tgz"
+- name: Speedtest | Assert direct URL provided
+  ansible.builtin.assert:
+    that:
+      - node_speedtest_direct_url is defined
+      - (node_speedtest_direct_url | length) > 0
+    fail_msg: >-
+      Repo install failed/unsupported. Please define node_speedtest_version and node_speedtest_direct_url.
+      Example:
+        node_speedtest_version: "1.2.X"
+        node_speedtest_direct_url: "https://install.speedtest.net/app/cli/ookla-speedtest-{{ node_speedtest_version }}-linux-{{ _speedtest_arch }}.tgz"
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+- name: Speedtest | Download tarball (direct)
+  ansible.builtin.get_url:
+    url: "{{ node_speedtest_direct_url }}"
+    dest: "/tmp/ookla-speedtest-{{ _speedtest_arch }}.tgz"
+    mode: "0644"
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# распаковываем во временную папку
+- name: Speedtest | Ensure unpack dir exists
+  ansible.builtin.file:
+    path: "/tmp/ookla-speedtest-{{ _speedtest_arch }}"
+    state: directory
+    mode: "0755"
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+- name: Speedtest | Unpack tarball (direct)
+  ansible.builtin.unarchive:
+    src: "/tmp/ookla-speedtest-{{ _speedtest_arch }}.tgz"
+    dest: "/tmp/ookla-speedtest-{{ _speedtest_arch }}"
+    remote_src: true
+    extra_opts: [--no-same-owner]
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# гарантируем каталог для целевого бинаря из переменной
+- name: Speedtest | Ensure target dir exists ({{ node_speedtest_bin | dirname }})
+  ansible.builtin.file:
+    path: "{{ node_speedtest_bin | dirname }}"
+    state: directory
+    mode: "0755"
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# ставим ровно в {{ node_speedtest_bin }}
+- name: Speedtest | Install binary (direct) → {{ node_speedtest_bin }}
+  ansible.builtin.copy:
+    src: "/tmp/ookla-speedtest-{{ _speedtest_arch }}/speedtest"
+    dest: "{{ node_speedtest_bin }}"
+    remote_src: true
+    mode: "0755"
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_install | bool
+    - not (_speedtest_repo_ok | default(false))
+    - not speedtest_present
+  tags: [speedtest_install, speedtest_ookla]
+
+# -----------------------------------------------------------------------
+
+- name: Speedtest | Deploy script
+  ansible.builtin.template:
+    src: speedtest_textfile_ookla.sh.j2
+    dest: /usr/local/bin/speedtest_textfile_ookla.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when: node_speedtest_enabled | bool
+  tags: [speedtest_ookla]
+
+- name: Speedtest | Install systemd service
+  ansible.builtin.template:
+    src: speedtest-textfile-ookla.service.j2
+    dest: /etc/systemd/system/speedtest-textfile-ookla.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: node_speedtest_enabled | bool
+  notify: Reload systemd
+  tags: [speedtest_ookla]
+
+- name: Speedtest | Install systemd timer
+  ansible.builtin.template:
+    src: speedtest-textfile-ookla.timer.j2
+    dest: /etc/systemd/system/speedtest-textfile-ookla.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: node_speedtest_enabled | bool
+  notify: Reload systemd
+  tags: [speedtest_ookla]
+
+- name: Speedtest | Enable+start timer (if enabled)
+  ansible.builtin.systemd:
+    name: speedtest-textfile-ookla.timer
+    enabled: true
+    state: started
+  when:
+    - node_speedtest_enabled | bool
+    - node_speedtest_timer_enabled | bool
+  tags: [speedtest_ookla]

@@ -13,5 +13,6 @@
   hosts: vpn
   roles:
     - { role: wireguard_node, tags: [wg, wg_node] }
-    - { role: node, tags: [node, node_iperf] }     # iperf3@PORT, скрипты и пр.
+    - { role: node, tags: [node] }
     - { role: node_exporter, tags: [node_exporter] }
+    - { role: speedtest_ookla, tags: [speedtest_ookla] }

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Ookla speedtest and export Prometheus textfile
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/speedtest_textfile_ookla.sh
+Nice=10
