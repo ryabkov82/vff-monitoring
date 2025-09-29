@@ -1,0 +1,56 @@
+groups:
+- name: net-alerts
+  rules:
+
+  - alert: HighIfaceUtilization
+    expr: max_over_time(iface:utilization:ratio[5m]) > 0.80
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Занятость интерфейса >80% — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }}{% endraw %}"
+      description: "{% raw %}Средняя занятость интерфейса за 5 минут: {{ humanizePercentage $value }} (> 80%).\nМетрика: iface:utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}, интерфейс: {{ $labels.device }}.{% endraw %}"
+
+  - alert: HighIfaceUtilizationCritical
+    expr: max_over_time(iface:utilization:ratio[5m]) > 0.95
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{% raw %}Канал почти насыщен (>95%) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }}{% endraw %}"
+      description: "{% raw %}Средняя занятость интерфейса за 5 минут: {{ humanizePercentage $value }} (> 95%).\nМетрика: iface:utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}, интерфейс: {{ $labels.device }}.{% endraw %}"
+
+  - alert: HighNodeUplinkUtilization
+    expr: max_over_time(node:uplink_utilization:ratio[5m]) > 0.80
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Занятость канала узла >80% — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Средняя занятость аплинка узла за 5 минут: {{ humanizePercentage $value }} (> 80%).\nМетрика: node:uplink_utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: HighNodeUplinkUtilizationCritical
+    expr: max_over_time(node:uplink_utilization:ratio[5m]) > 0.95
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{% raw %}Канал узла почти насыщен (>95%) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Средняя занятость аплинка узла за 5 минут: {{ humanizePercentage $value }} (> 95%).\nМетрика: node:uplink_utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: MissingIfSpeed
+    expr: |-
+      (
+        8 * sum by (instance, device) (
+          rate(node_network_receive_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*"}[5m]) +
+          rate(node_network_transmit_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*"}[5m])
+        )
+      ) > 5e6
+      unless on (instance, device)
+      max by (instance, device) (if_speed_bps)
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Нет if_speed_bps для {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }} — проценты недоступны{% endraw %}"
+      description: "{% raw %}Обнаружен трафик > 5 Mbps на интерфейсе {{ $labels.device }}, но отсутствует метрика if_speed_bps.\nДобавьте/обновите textfile-метрику скоростей интерфейсов (if_speed_bps) на узле, чтобы рассчитывать процент занятости.{% endraw %}"

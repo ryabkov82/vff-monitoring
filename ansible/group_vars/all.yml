@@ -55,3 +55,7 @@ marzban_exporter_bind_port: 9205
 
 # basic auth на /metrics у экспортера
 marzban_exporter_protected: true
+
+# используется для доступа к prometheus с узлов
+prom_user: "admin"
+prom_pass: "{{ hostvars[groups['hub'][0]].nginx_passwords.admin | default('') }}"

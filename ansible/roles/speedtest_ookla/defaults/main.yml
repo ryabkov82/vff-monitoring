@@ -1,0 +1,28 @@
+# Speedtest (Ookla) → node_exporter textfile
+node_speedtest_install: true
+
+# Fallback direct download (когда репозиторий Ookla недоступен)
+node_speedtest_version: "1.2.0"
+node_speedtest_direct_url: "https://install.speedtest.net/app/cli/ookla-speedtest-{{ node_speedtest_version }}-linux-{{ _speedtest_arch }}.tgz"
+
+node_speedtest_enabled: true              # включить установку скрипта
+node_speedtest_timer_enabled: true        # включить systemd timer
+node_speedtest_oncalendar: "*-*-* 06,18:00:00"  # 2 раза в сутки (06:00 и 18:00)
+node_speedtest_randomized_delay_sec: 900
+
+node_speedtest_textdir: /var/lib/node_exporter/textfile
+node_speedtest_bin: /usr/local/bin/speedtest      # путь до Ookla CLI
+node_speedtest_server_id: ""                # "" = авто, либо укажи ID
+
+# Имя должно совпадать с labels.name в job=node (бывш. nodes)
+node_speedtest_node_name: "{{ inventory_hostname }}"
+
+# Проверка «занятости» аплинка через Prometheus
+node_speedtest_skip_busy: true
+node_speedtest_busy_thresh: "0.50"
+node_speedtest_prom_url: "https://prom.vpn-for-friends.com"
+
+# Если на Prometheus включена basic-auth — положи их в vault/group_vars
+node_speedtest_prom_user: "{{ prom_user | default('') }}"
+node_speedtest_prom_pass: "{{ prom_pass | default('') }}"
+node_speedtest_is_busy_debug: "0"

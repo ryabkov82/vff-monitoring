@@ -1,9 +1,18 @@
 groups:
 - name: rec-ru-probe
   rules:
-  - record: ru:wg:throughput_up_bps
-    expr: max by (name) (ru_probe_throughput_bps{direction="uplink"})
-  - record: ru:wg:throughput_down_bps
-    expr: max by (name) (ru_probe_throughput_bps{direction="downlink"})
+  # WG throughput (берём последнее значение по каждому узлу, сохраняем name)
+  - record: ru:wg:throughput_uplink_bps
+    expr: max by (name) (
+            last_over_time(ru_probe_throughput_bps{job="ru-probe",direction="uplink"}[1h])
+          )
+  - record: ru:wg:throughput_downlink_bps
+    expr: max by (name) (
+            last_over_time(ru_probe_throughput_bps{job="ru-probe",direction="downlink"}[1h])
+          )
+
+  # Возраст последнего прогона по каждому узлу
   - record: ru:wg:last_run_age_seconds
-    expr: max by (name) (ru_probe_last_run_timestamp_seconds != 0)
+    expr: time() - max by (name) (
+            last_over_time(ru_probe_last_run_timestamp_seconds{job="ru-probe"}[6h])
+          )

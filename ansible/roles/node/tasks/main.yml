@@ -1,10 +1,4 @@
 ---
-- name: Install deps
-  ansible.builtin.package:
-    name: [curl, jq]
-    state: present
-  tags: [node]
-
 - name: Node | Include iperf3 server tasks
   ansible.builtin.include_tasks: iperf.yml
   tags: [node, node_iperf, iperf3]

@@ -17,6 +17,8 @@
     - rec-ru-probe
     - alerts-wireguard
     - alerts-availability
+    - alerts-ru-probe
+    - alerts-network
   notify: Prometheus reload
 
 - name: Render targets (file_sd)

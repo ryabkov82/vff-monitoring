@@ -289,3 +289,42 @@ endif
 # Публикация if_speed_bps (textfile) на всей группе vpn
 node-if-speed-vpn:
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_if_speed $(ANSIBLE_FLAGS)
+
+# ==== Speedtest (Ookla) ad-hoc helpers ====
+
+# Установка/обновление speedtest на КОНКРЕТНОМ узле (скрипт+юниты+таймер+бинарь)
+node-speedtest:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit "$(HOST)" --tags speedtest_ookla,speedtest_install $(ANSIBLE_FLAGS)
+
+# Установка/обновление speedtest на ВСЕХ узлах группы (скрипт+юниты+таймер+бинарь)
+node-speedtest-all:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags speedtest_ookla,speedtest_install $(ANSIBLE_FLAGS)
+
+# Разовый запуск сервиса
+node-speedtest-run:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
+	  -a 'name=speedtest-textfile-ookla.service state=started' || true
+
+# Таймер включить/выключить
+node-speedtest-timer-enable:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
+	  -a 'name=speedtest-textfile-ookla.timer enabled=yes state=started'
+
+node-speedtest-timer-disable:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
+	  -a 'name=speedtest-textfile-ookla.timer enabled=no state=stopped'
+
+# Статусы (service + timer)
+node-speedtest-status:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'systemctl --no-pager --full status speedtest-textfile-ookla.service || true; echo; systemctl --no-pager --full status speedtest-textfile-ookla.timer || true'
+
+# Логи последнего запуска (2 часа)
+node-speedtest-logs:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'journalctl -u speedtest-textfile-ookla.service -n 200 --since "-2h" --no-pager || true'
+
+# Экспортируемые метрики textfile
+node-speedtest-metrics:
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'f=/var/lib/node_exporter/textfile/speedtest_ookla.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"'

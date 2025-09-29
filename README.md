@@ -9,6 +9,7 @@
 - Роль Nginx (reverse-proxy, certs, htpasswd): [docs/nginx-role.md](docs/nginx-role.md)
 - Роль Docker (установка Docker Engine + Compose v2): [docs/docker-role.md](docs/docker-role.md)
 - Роль RU Probe (iperf3 throughput): [docs/ru-probe-role.md](docs/ru-probe-role.md)
+- Роль Speedtest (Ookla) (textfile метрики для node_exporter): [docs/speedtest_ookla.md](docs/speedtest_ookla.md)
 
 ## Grafana — основные команды
 
