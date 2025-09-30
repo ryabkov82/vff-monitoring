@@ -1,0 +1,49 @@
+---
+# WireGuard → textfile exporter
+
+- name: WG | Ensure textfile dir exists
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [node_wg_metrics]
+
+- name: WG | Install script /usr/local/bin/wg_textfile.sh
+  ansible.builtin.template:
+    src: wg_textfile.sh.j2
+    dest: /usr/local/bin/wg_textfile.sh
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Reload systemd
+  tags: [node_wg_metrics]
+
+- name: WG | Install systemd unit
+  ansible.builtin.template:
+    src: wg-metrics.service.j2
+    dest: /etc/systemd/system/wg-metrics.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  tags: [node_wg_metrics]
+
+- name: WG | Install systemd timer
+  ansible.builtin.template:
+    src: wg-metrics.timer.j2
+    dest: /etc/systemd/system/wg-metrics.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  tags: [node_wg_metrics]
+
+- name: WG | Enable & start timer
+  ansible.builtin.systemd:
+    name: wg-metrics.timer
+    state: started
+    enabled: true
+    daemon_reload: false
+  tags: [node_wg_metrics]
