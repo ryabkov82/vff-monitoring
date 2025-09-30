@@ -6,3 +6,7 @@
 - name: Include if_speed tasks
   ansible.builtin.import_tasks: if_speed.yml
   tags: [node_if_speed]
+
+- name: Include reality service health exporter
+  ansible.builtin.import_tasks: reality.yml
+  tags: [node_reality, reality]

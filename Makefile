@@ -239,6 +239,78 @@ endif
 	T="$${TAIL:-200}"; \
 	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u iperf3@'$$PORT' -n '$$T' --no-pager' $(ANSIBLE_FLAGS) || true
 
+# === REALITY (XRAY/Marzban) health exporter ==================================
+# Управление раскаткой и проверками скрипта reality_svc_health.sh.
+# Что делает:
+#   - reality-install / reality-install-vpn: раскатывает скрипт и systemd unit/timer
+#     через роль ansible/roles/node (тег node_reality):
+#       * /usr/local/bin/reality_svc_health.sh
+#       * /etc/default/reality_svc
+#       * /etc/systemd/system/reality-svc.service (+ timer) и включает таймер
+#   - reality-run: разово запускает oneshot-сервис
+#   - reality-status: показывает статус сервиса и таймера
+#   - reality-logs: выводит логи последнего запуска (TAIL=200 по умолчанию)
+#   - reality-metrics: показывает опубликованные метрики из textfile каталога
+#
+# Примеры:
+#   make reality-install HOST=nl-ams-2
+#   make reality-install-vpn
+#   make reality-run HOST=nl-ams-2
+#   make reality-status HOST=nl-ams-2
+#   make reality-logs HOST=nl-ams-2 TAIL=300
+#   make reality-metrics HOST=nl-ams-2
+#
+# Требования:
+#   - Роль ansible/roles/node должна содержать tasks/templates для reality (тег node_reality)
+#   - На узлах установлен node_exporter с включённым textfile collector
+#   - Переменная node_reality_enabled=true (глобально или в host_vars/group_vars)
+
+.PHONY: reality-install reality-install-vpn reality-run reality-status reality-logs reality-metrics
+
+# Установка/обновление только на ОДНОМ узле
+reality-install:
+ifndef HOST
+	$(error Usage: make reality-install HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit "$(HOST)" --tags node_reality $(ANSIBLE_FLAGS)
+
+# Установка/обновление на ВСЕЙ группе vpn
+reality-install-vpn:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_reality $(ANSIBLE_FLAGS)
+
+# Разовый запуск проверки (oneshot)
+reality-run:
+ifndef HOST
+	$(error Usage: make reality-run HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
+	  -a 'name=reality-svc.service state=started' $(ANSIBLE_FLAGS) || true
+
+# Статус сервиса и таймера
+reality-status:
+ifndef HOST
+	$(error Usage: make reality-status HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'systemctl --no-pager --full status reality-svc.service || true; echo; systemctl --no-pager --full status reality-svc.timer || true' $(ANSIBLE_FLAGS)
+
+# Логи последнего запуска (TAIL=200 по умолчанию)
+reality-logs:
+ifndef HOST
+	$(error Usage: make reality-logs HOST=<hostname> [TAIL=200] [ANSIBLE_FLAGS="..."])
+endif
+	@T="$${TAIL:-200}"; \
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'journalctl -u reality-svc.service -n '"$$T"' --since "-2h" --no-pager || true' $(ANSIBLE_FLAGS)
+
+# Показать опубликованные метрики (если файл уже создан)
+reality-metrics:
+ifndef HOST
+	$(error Usage: make reality-metrics HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'f=/var/lib/node_exporter/textfile/reality_svc.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"' $(ANSIBLE_FLAGS)
+
 # ---------------------------
 # SPEEDTEST (Ookla): помощники
 # ---------------------------
