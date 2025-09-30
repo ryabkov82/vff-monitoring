@@ -10,3 +10,7 @@
 - name: Include reality service health exporter
   ansible.builtin.import_tasks: reality.yml
   tags: [node_reality, reality]
+
+- name: Include WG textfile metrics tasks
+  ansible.builtin.import_tasks: wg_metrics.yml
+  tags: [node_wg_metrics]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run WireGuard metrics exporter periodically
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=15s
+AccuracySec=5s
+Unit=wg-metrics.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+OUT="/var/lib/node_exporter/textfile/wg.prom"
+TMP="$(mktemp)"
+now="$(date +%s)"
+
+# Функция экранирования для label-values Prometheus
+esc() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+{
+  echo '# HELP wireguard_peer_latest_handshake_seconds Last handshake unixtime'
+  echo '# TYPE wireguard_peer_latest_handshake_seconds gauge'
+  echo '# HELP wireguard_peer_transfer_bytes_total Peer transfer bytes (monotonic)'
+  echo '# TYPE wireguard_peer_transfer_bytes_total counter'
+  echo '# HELP wireguard_peer_connected Peer considered connected (<=180s since handshake)'
+  echo '# TYPE wireguard_peer_connected gauge'
+  echo '# HELP wireguard_interface_listen_port Listen port'
+  echo '# TYPE wireguard_interface_listen_port gauge'
+} > "$TMP"
+
+wg show all dump | awk -v now="$now" -F'\t' '
+function esc(s,   t){ gsub(/\\/,"\\\\",s); gsub(/"/,"\\\"",s); return s }
+
+# Строка интерфейса: 5 полей: iface priv pub listen fwmark
+NF==5 && $4 ~ /^[0-9]+$/ {
+  iface = $1; listen = $4;
+  printf "wireguard_interface_listen_port{interface=\"%s\"} %s\n", esc(iface), listen;
+  next;
+}
+
+# Строка пира: может быть с префиксом iface (NF>=9) или без (NF>=8)
+NF>=8 {
+  off = ($1 == iface) ? 1 : 0;  # если первый столбец совпадает с текущим iface — сдвигаем на 1
+  peer     = $(1+off);
+  psk      = $(2+off);           # не используется
+  endpoint = $(3+off);
+  allowed  = $(4+off);
+  lhs      = $(5+off);
+  rx       = $(6+off);
+  tx       = $(7+off);
+  keepalive= $(8+off);
+
+  if (lhs !~ /^[0-9]+$/) lhs = 0;                 # если рукопожатий не было
+  conn = (lhs>0 && (now - lhs) <= 180) ? 1 : 0;   # «онлайн» за последние 180с
+
+  printf "wireguard_peer_latest_handshake_seconds{interface=\"%s\",peer=\"%s\",endpoint=\"%s\"} %s\n", esc(iface), esc(peer), esc(endpoint), lhs;
+  printf "wireguard_peer_transfer_bytes_total{interface=\"%s\",peer=\"%s\",endpoint=\"%s\",direction=\"rx\"} %s\n", esc(iface), esc(peer), esc(endpoint), rx;
+  printf "wireguard_peer_transfer_bytes_total{interface=\"%s\",peer=\"%s\",endpoint=\"%s\",direction=\"tx\"} %s\n", esc(iface), esc(peer), esc(endpoint), tx;
+  printf "wireguard_peer_connected{interface=\"%s\",peer=\"%s\",endpoint=\"%s\"} %d\n", esc(iface), esc(peer), esc(endpoint), conn;
+}
+' >> "$TMP"
+
+chmod 0644 "$TMP"
+mv "$TMP" "$OUT"

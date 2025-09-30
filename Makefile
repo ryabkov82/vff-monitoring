@@ -311,6 +311,62 @@ endif
 	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
 	  -a 'f=/var/lib/node_exporter/textfile/reality_svc.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"' $(ANSIBLE_FLAGS)
 
+# === WireGuard textfile exporter (wg_textfile.sh) =============================
+# Раскатка и управление метриками WireGuard в textfile.
+#   wg-metrics-install / wg-metrics-install-vpn — установка/обновление (тег node_wg_metrics)
+#   wg-metrics-run     — разовый запуск oneshot-сервиса
+#   wg-metrics-status  — статус сервиса/таймера
+#   wg-metrics-logs    — логи сервиса (TAIL=200)
+#   wg-metrics-metrics — вывод файла метрик
+#
+# Примеры:
+#   make wg-metrics-install HOST=nl-ams-2
+#   make wg-metrics-install-vpn
+#   make wg-metrics-run HOST=nl-ams-2
+#   make wg-metrics-status HOST=nl-ams-2
+#   make wg-metrics-logs HOST=nl-ams-2 TAIL=300
+#   make wg-metrics-metrics HOST=nl-ams-2
+
+.PHONY: wg-metrics-install wg-metrics-install-vpn wg-metrics-run wg-metrics-status wg-metrics-logs wg-metrics-metrics
+
+wg-metrics-install:
+ifndef HOST
+	$(error Usage: make wg-metrics-install HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit "$(HOST)" --tags node_wg_metrics $(ANSIBLE_FLAGS)
+
+wg-metrics-install-vpn:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_wg_metrics $(ANSIBLE_FLAGS)
+
+wg-metrics-run:
+ifndef HOST
+	$(error Usage: make wg-metrics-run HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m systemd \
+	  -a 'name=wg-metrics.service state=started' $(ANSIBLE_FLAGS) || true
+
+wg-metrics-status:
+ifndef HOST
+	$(error Usage: make wg-metrics-status HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'systemctl --no-pager --full status wg-metrics.service || true; echo; systemctl --no-pager --full status wg-metrics.timer || true' $(ANSIBLE_FLAGS)
+
+wg-metrics-logs:
+ifndef HOST
+	$(error Usage: make wg-metrics-logs HOST=<hostname> [TAIL=200] [ANSIBLE_FLAGS="..."])
+endif
+	@T="$${TAIL:-200}"; \
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'journalctl -u wg-metrics.service -n '"$$T"' --since "-2h" --no-pager || true' $(ANSIBLE_FLAGS)
+
+wg-metrics-metrics:
+ifndef HOST
+	$(error Usage: make wg-metrics-metrics HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) "$(HOST)" -b -m shell \
+	  -a 'f=/var/lib/node_exporter/textfile/wg.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "metrics file not found: $$f"' $(ANSIBLE_FLAGS)
+
 # ---------------------------
 # SPEEDTEST (Ookla): помощники
 # ---------------------------
