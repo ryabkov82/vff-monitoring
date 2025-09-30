@@ -1,0 +1,8 @@
+---
+# Универсальный хэндлер для перечитывания юнитов systemd
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen:
+    - Reload systemd
+    - reload systemd

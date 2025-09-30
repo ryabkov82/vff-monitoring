@@ -1,0 +1,55 @@
+---
+- name: Reality | Ensure textfile dir exists
+  ansible.builtin.file:
+    path: "{{ node_reality_textfile_dir }}"
+    state: directory
+    mode: "0755"
+  when: node_reality_enabled | bool
+
+- name: Reality | Install script /usr/local/bin/reality_svc_health.sh
+  ansible.builtin.template:
+    src: reality_svc_health.sh.j2
+    dest: /usr/local/bin/reality_svc_health.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when: node_reality_enabled | bool
+  notify: Reload systemd
+
+- name: Reality | Drop /etc/default/reality_svc
+  ansible.builtin.template:
+    src: default_reality_svc.j2
+    dest: /etc/default/reality_svc
+    owner: root
+    group: root
+    mode: "0644"
+  when: node_reality_enabled | bool
+  notify: Reload systemd
+
+- name: Reality | Install systemd unit
+  ansible.builtin.template:
+    src: reality-svc.service.j2
+    dest: /etc/systemd/system/reality-svc.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: node_reality_enabled | bool
+  notify: Reload systemd
+
+- name: Reality | Install systemd timer
+  ansible.builtin.template:
+    src: reality-svc.timer.j2
+    dest: /etc/systemd/system/reality-svc.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: node_reality_enabled | bool
+  notify: Reload systemd
+
+- name: Reality | Enable & start timer
+  ansible.builtin.systemd:
+    name: reality-svc.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: node_reality_enabled | bool

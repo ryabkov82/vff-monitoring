@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# reality_svc_health.sh — пишет textfile-метрики о состоянии REALITY (XRAY в контейнере)
+# Зависимости: bash, docker, ss (iproute2). jq не требуется.
+
+set -euo pipefail
+
+# Подхватываем настройки:
+#   XRAY_CONTAINER_NAME — имя или регэксп по имени контейнера (пример: "^marzban-node-.*")
+#   REALITY_PORT        — порт, который должен слушать XRAY/Marzban (обычно 443)
+#   TEXTFILE_DIR        — каталог textfile-метрик для node_exporter
+#   NODE_NAME           — ДОЛЖЕН совпадать с labels.name в job=nodes
+[[ -f /etc/default/reality_svc ]] && . /etc/default/reality_svc
+
+XRAY_CONTAINER_NAME="${XRAY_CONTAINER_NAME:-}"
+REALITY_PORT="${REALITY_PORT:-{{ node_reality_port }}}"
+TEXTFILE_DIR="${TEXTFILE_DIR:-{{ node_reality_textfile_dir }}}"
+NODE_NAME="${NODE_NAME:-{{ inventory_hostname | default('CHANGE_ME') }}}"
+HOSTNAME_SHORT="$(hostname -s)"
+NOW_TS="$(date +%s)"
+
+mkdir -p "$TEXTFILE_DIR"
+
+# ---- 1) Определяем имя контейнера (если явно не задано) ---------------------
+container_name=""
+if [[ -n "$XRAY_CONTAINER_NAME" ]]; then
+  container_name="$(
+    {% raw %}docker ps --format '{{.Names}}'{% endraw %} | grep -E "$XRAY_CONTAINER_NAME" | head -n1 || true
+  )"
+else
+  container_name="$(
+    {% raw %}docker ps --format '{{.Names}} {{.Ports}}'{% endraw %} | awk '/443(->|\/tcp|$)/{print $1; exit}'
+  )"
+  if [[ -z "$container_name" ]]; then
+    container_name="$(
+      {% raw %}docker ps --format '{{.Names}} {{.Image}}'{% endraw %} | grep -Ei 'xray|marzban|sing-box' | awk '{print $1; exit}'
+    )"
+  fi
+fi
+
+# ---- 2) Читаем статус контейнера --------------------------------------------
+xray_up=0
+xray_detail="docker:not_found"
+xray_started_at_s=0
+xray_restart_count=0
+
+if [[ -n "$container_name" ]] && docker inspect "$container_name" >/dev/null 2>&1; then
+  IFS=$'\t' read -r st health started_at restart_count < <(
+    {% raw %}docker inspect -f '{{.State.Status}}{{"\t"}}{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}{{"\t"}}{{.State.StartedAt}}{{"\t"}}{{.RestartCount}}'{% endraw %} \
+      "$container_name" 2>/dev/null
+  )
+  unset IFS
+  
+  [[ "${st:-}" =~ ^running ]] && xray_up=1
+
+  started_at="${started_at:-}"
+  if [[ -n "$started_at" ]]; then
+    started_trim="${started_at%%.*}Z"
+    xray_started_at_s="$(date -d "$started_trim" +%s 2>/dev/null || echo 0)"
+  fi
+
+  xray_restart_count="${restart_count:-0}"
+
+  if [[ "${health:-"-"}" != "-" ]]; then
+    xray_detail="docker:${container_name} ${st} ${health}"
+  else
+    xray_detail="docker:${container_name} ${st}"
+  fi
+fi
+
+# ---- 3) Слушает ли порт на хосте --------------------------------------------
+port_listen=0
+if ss -ltn "( sport = :${REALITY_PORT} )" | grep -q LISTEN; then
+  port_listen=1
+fi
+
+# ---- 4) Пишем текстовые метрики атомарно ------------------------------------
+out="${TEXTFILE_DIR}/reality_svc.prom"
+detail_sanitized="$(sed 's/"/\\"/g' <<<"$xray_detail")"
+
+{
+  echo "reality_svc_up{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\"} ${xray_up}"
+  echo "reality_svc_port_listen{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\",port=\"${REALITY_PORT}\"} ${port_listen}"
+  echo "reality_svc_started_seconds{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\"} ${xray_started_at_s}"
+  echo "reality_svc_restart_count{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\"} ${xray_restart_count}"
+  echo "reality_svc_info{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\",detail=\"${detail_sanitized}\"} 1"
+  echo "reality_svc_last_check_seconds{name=\"${NODE_NAME}\",host=\"${HOSTNAME_SHORT}\"} ${NOW_TS}"
+} > "${out}.tmp"
+
+mv -f "${out}.tmp" "${out}"
+exit 0

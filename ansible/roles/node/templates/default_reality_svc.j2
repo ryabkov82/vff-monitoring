@@ -1,0 +1,16 @@
+# /etc/default/reality_svc
+# Переменные окружения для reality_svc_health.sh
+
+# Имя (или regex) контейнера XRAY/Marzban. Примеры:
+# XRAY_CONTAINER_NAME="^marzban-node-.*"
+# XRAY_CONTAINER_NAME="marzban-node-marzban-node-1"
+XRAY_CONTAINER_NAME="{{ node_reality_container_name | default('') }}"
+
+# Порт, который должен слушать XRAY/Marzban (обычно 443)
+REALITY_PORT="{{ node_reality_port }}"
+
+# Textfile-метрики для node_exporter
+TEXTFILE_DIR="{{ node_reality_textfile_dir }}"
+
+# Имя узла — должно совпадать с labels.name в job=nodes
+NODE_NAME="{{ node_reality_node_name | default(inventory_hostname) }}"

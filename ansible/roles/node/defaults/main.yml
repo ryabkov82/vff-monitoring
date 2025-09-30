@@ -18,3 +18,26 @@ node_uplink_default_speed_bps: 1000000000   # 1 Gbit/s
 
 # включить публикацию if_speed_bps через textfile
 node_if_speed_textfile_enabled: true
+
+# === Reality (XRAY/Marzban) textfile exporter ===
+node_reality_enabled: true
+
+# Где писать метрики
+node_reality_textfile_dir: /var/lib/node_exporter/textfile
+
+# XRAY/Marzban
+node_reality_container_name: "^marzban-.*"    # можно шаблоном/regex (пример: "^marzban-node-.*")
+node_reality_port: 443
+
+# Имя узла в метриках (по умолчанию — inventory_hostname)
+node_reality_node_name: "{{ inventory_hostname }}"
+
+# systemd
+node_reality_user: root
+node_reality_group: root
+node_reality_timeout: 60
+node_reality_stdout: journal
+node_reality_stderr: journal
+node_reality_onboot: 30s
+node_reality_interval: 60s
+node_reality_accuracy: 10s

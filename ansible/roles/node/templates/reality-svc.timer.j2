@@ -1,0 +1,11 @@
+[Unit]
+Description=REALITY service health (textfile)
+
+[Timer]
+OnBootSec={{ node_reality_onboot }}
+OnUnitActiveSec={{ node_reality_interval }}
+AccuracySec={{ node_reality_accuracy }}
+Unit=reality-svc.service
+
+[Install]
+WantedBy=timers.target

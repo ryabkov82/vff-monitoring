@@ -1,0 +1,18 @@
+[Unit]
+Description=REALITY service health exporter (docker)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User={{ node_reality_user }}
+Group={{ node_reality_group }}
+EnvironmentFile=-/etc/default/reality_svc
+ExecStart=/usr/local/bin/reality_svc_health.sh
+Nice=10
+StandardOutput={{ node_reality_stdout }}
+StandardError={{ node_reality_stderr }}
+TimeoutStartSec={{ node_reality_timeout }}
+
+[Install]
+WantedBy=multi-user.target
