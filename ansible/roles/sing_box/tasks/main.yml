@@ -1,0 +1,134 @@
+- name: Ensure deps (curl, tar)
+  ansible.builtin.package:
+    name:
+      - curl
+      - tar
+    state: present
+
+- name: Check if sing-box binary exists
+  ansible.builtin.stat:
+    path: "{{ sing_box_bin_path }}"
+  register: sing_box_present
+
+- name: Read installed sing-box version (if present)
+  ansible.builtin.command: "{{ sing_box_bin_path }} version"
+  register: sing_box_ver_cmd
+  failed_when: false
+  changed_when: false
+  when: sing_box_present.stat.exists
+
+# 1) Собираем raw (оставь как есть, если уже есть)
+- name: Build raw version string
+  ansible.builtin.set_fact:
+    sing_box_ver_raw: >-
+      {{ (sing_box_ver_cmd.stdout | default('')) ~ ' ' ~ (sing_box_ver_cmd.stderr | default('')) }}
+  when: sing_box_present.stat.exists | bool
+
+# 2) Надёжно парсим установленную версию через shell+grep
+- name: Parse installed version via shell (X.Y.Z)
+  ansible.builtin.shell: |
+    set -o pipefail
+    printf %s {{ sing_box_ver_raw | default('') | quote }} \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
+    | head -n1
+  args:
+    executable: /bin/bash
+  register: sing_box_ver_parsed
+  changed_when: false
+  failed_when: false
+  when: sing_box_present.stat.exists | bool
+
+- name: Set installed version fact (normalized)
+  ansible.builtin.set_fact:
+    sing_box_current_version_norm: "{{ sing_box_ver_parsed.stdout | default('') | trim }}"
+  when: sing_box_present.stat.exists | bool
+
+# 3) Нормализуем желаемую версию (режем ведущую 'v', если есть)
+- name: Normalize desired version
+  ansible.builtin.set_fact:
+    sing_box_desired_version_norm: "{{ (sing_box_version | default('') | string) | regex_replace('^v', '') | trim }}"
+
+# 4) Отладка (увидим обе стороны)
+# - name: Debug version comparison
+#   ansible.builtin.debug:
+#     msg:
+#       - "raw: {{ sing_box_ver_raw | default('N/A') }}"
+#       - "installed_norm: {{ sing_box_current_version_norm | default('') }}"
+#       - "desired_norm:   {{ sing_box_desired_version_norm | default('') }}"
+#   when: sing_box_present.stat.exists | bool
+
+# 5) Решаем — ставить/обновлять?
+- name: Decide if install/upgrade needed
+  ansible.builtin.set_fact:
+    sing_box_need_install: >-
+      {{
+        (not sing_box_present.stat.exists) or
+        (
+          (sing_box_desired_version_norm | length) > 0 and
+          (sing_box_current_version_norm | default('') != sing_box_desired_version_norm)
+        )
+      }}
+
+- name: Download sing-box tarball
+  ansible.builtin.get_url:
+    url: "{{ sing_box_tarball_url }}"
+    dest: "/tmp/sing-box-{{ sing_box_version }}-{{ sing_box_arch }}.tar.gz"
+    mode: "0644"
+    checksum: "{{ 'sha256:' + sing_box_tarball_sha256 if sing_box_tarball_sha256 | length > 0 else omit }}"
+  when: sing_box_need_install
+
+- name: Unpack tarball
+  ansible.builtin.unarchive:
+    src: "/tmp/sing-box-{{ sing_box_version }}-{{ sing_box_arch }}.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    list_files: true
+  register: sing_box_unpack
+  when: sing_box_need_install
+
+- name: Locate binary in unpacked tree
+  ansible.builtin.set_fact:
+    sing_box_src_bin: >-
+      {{ '/tmp/' + (sing_box_unpack.files
+          | select('match', '.*/sing-box$')
+          | list | first
+          | dirname
+          | regex_replace('^./', '')) + '/sing-box' }}
+  when: sing_box_need_install
+
+# Первичная установка (файл отсутствует)
+- name: Install sing-box (initial)
+  ansible.builtin.copy:
+    src: "{{ sing_box_src_bin }}"
+    dest: "{{ sing_box_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  when:
+    - sing_box_need_install
+    - not sing_box_present.stat.exists
+
+# Обновление при смене версии (файл есть, версия иная)
+- name: Upgrade sing-box (version changed)
+  ansible.builtin.copy:
+    src: "{{ sing_box_src_bin }}"
+    dest: "{{ sing_box_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+    force: true
+  when:
+    - sing_box_need_install
+    - sing_box_present.stat.exists
+    - (sing_box_current_version | default('')) != sing_box_version
+
+- name: Show installed version (debug)
+  ansible.builtin.command: "{{ sing_box_bin_path }} version"
+  changed_when: false
+  register: sing_box_ver_final
+
+- name: Debug installed sing-box version
+  ansible.builtin.debug:
+    msg: "sing-box installed: {{ sing_box_ver_final.stdout | default('unknown') }}"

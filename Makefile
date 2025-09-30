@@ -492,3 +492,78 @@ ru-probe-logs: ## Показать логи последнего запуска 
 ru-probe-metrics: ## Показать опубликованные метрики RU iperf3 (если уже есть)
 	@# Пример: make ru-probe-metrics
 	ansible -i $(INVENTORY) hub -m shell -a 'f=$(TEXTFILE_DIR)/ru_iperf.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "no metrics yet"' $(ANSIBLE_FLAGS)
+
+# === sing-box (утилита для REALITY E2E) ======================================
+.PHONY: sing-box sing-box-version
+
+## Установить/обновить sing-box на ХАБЕ (роль sing_box)
+## Пример: make sing-box [ANSIBLE_FLAGS=--ask-vault-pass]
+sing-box:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags sing_box $(ANSIBLE_FLAGS)
+
+## Проверить версию sing-box на ХАБЕ
+## Пример: make sing-box-version
+sing-box-version:
+	ansible -i $(INVENTORY) hub -m shell \
+	  -a 'sing-box version || /usr/local/bin/sing-box version || echo "sing-box not found"' $(ANSIBLE_FLAGS)
+
+# === REALITY E2E (sing-box) на хабе =================================================
+.PHONY: reality-e2e reality-e2e-profiles reality-e2e-run reality-e2e-status reality-e2e-logs reality-e2e-metrics reality-e2e-timer-start reality-e2e-timer-stop
+
+# Полный прогон роли reality_e2e на хабе:
+# - рендер профилей из vpn_nodes (JSON+ENV)
+# - установка скрипта и systemd unit'ов
+# - enable+start таймеров для профилей с e2e_enabled=true
+# Пример: make reality-e2e [ANSIBLE_FLAGS=--ask-vault-pass]
+reality-e2e:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags reality_e2e $(ANSIBLE_FLAGS)
+
+# Только рендер профилей (без выката юнитов/таймеров)
+# Пример: make reality-e2e-profiles
+reality-e2e-profiles:
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags reality_e2e_profiles $(ANSIBLE_FLAGS)
+
+# Разовый запуск проверки для профиля (service @profile)
+# Пример: make reality-e2e-run PROFILE=nl-ams-2
+reality-e2e-run:
+ifndef PROFILE
+	$(error Usage: make reality-e2e-run PROFILE=<profile_name>)
+endif
+	ansible -i $(INVENTORY) hub -m systemd -a 'name=reality-e2e@$(PROFILE).service state=started' $(ANSIBLE_FLAGS)
+
+# Статус сервиса+таймера для профиля
+# Пример: make reality-e2e-status PROFILE=nl-ams-2
+reality-e2e-status:
+ifndef PROFILE
+	$(error Usage: make reality-e2e-status PROFILE=<profile_name>)
+endif
+	ansible -i $(INVENTORY) hub -m shell -a 'systemctl --no-pager --full status reality-e2e@$(PROFILE).service || true; echo; systemctl --no-pager --full status reality-e2e@$(PROFILE).timer || true' $(ANSIBLE_FLAGS)
+
+# Логи последнего запуска сервиса
+# Пример: make reality-e2e-logs PROFILE=nl-ams-2 [TAIL=200]
+reality-e2e-logs:
+ifndef PROFILE
+	$(error Usage: make reality-e2e-logs PROFILE=<profile_name> [TAIL=200])
+endif
+	@T="$${TAIL:-200}"; \
+	ansible -i $(INVENTORY) hub -m shell -a 'journalctl -u reality-e2e@$(PROFILE).service -n '$$T' --no-pager || true' $(ANSIBLE_FLAGS)
+
+# Посмотреть агрегированные метрики textfile
+# Пример: make reality-e2e-metrics
+reality-e2e-metrics:
+	ansible -i $(INVENTORY) hub -m shell -a 'f=/var/lib/node_exporter/textfile/reality_e2e.prom; test -f $$f && (echo "# $$f"; sed -n "1,120p" $$f) || echo "metrics file not found: $$f"' $(ANSIBLE_FLAGS)
+
+# Управление таймером для конкретного профиля (вкл/выкл)
+# Примеры: make reality-e2e-timer-start PROFILE=nl-ams-2
+#          make reality-e2e-timer-stop  PROFILE=nl-ams-2
+reality-e2e-timer-start:
+ifndef PROFILE
+	$(error Usage: make reality-e2e-timer-start PROFILE=<profile_name>)
+endif
+	ansible -i $(INVENTORY) hub -m systemd -a 'name=reality-e2e@$(PROFILE).timer enabled=yes state=started' $(ANSIBLE_FLAGS)
+
+reality-e2e-timer-stop:
+ifndef PROFILE
+	$(error Usage: make reality-e2e-timer-stop PROFILE=<profile_name>)
+endif
+	ansible -i $(INVENTORY) hub -m systemd -a 'name=reality-e2e@$(PROFILE).timer enabled=no state=stopped' $(ANSIBLE_FLAGS)

@@ -1,0 +1,29 @@
+{
+  "log": { "level": "{{ eff_log_level }}" },
+  "inbounds": [
+    { "type": "socks", "listen": "127.0.0.1", "listen_port": {{ eff_socks_port }} }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "server": "{{ eff_server }}",
+      "server_port": 443,
+      "uuid": "{{ reality_e2e_shared.uuid }}",
+      "flow": "{{ eff_flow }}",
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        {% if eff_sni is defined and (eff_sni | length) > 0 %}
+        "server_name": "{{ eff_sni }}",
+        {% endif %}
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": {
+          "enabled": true,
+          "public_key": "{{ reality_e2e_shared.public_key }}",
+          "short_id": "{{ reality_e2e_shared.short_id }}"
+        }
+      }
+    }
+  ],
+  "route": { "auto_detect_interface": true }
+}

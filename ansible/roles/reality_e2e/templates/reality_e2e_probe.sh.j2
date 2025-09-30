@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${DEBUG:-0}" = "1" ]] && echo "[args] CFG=$1 | NAME=$2 | SOCKS_PORT=$3" >&2
+
+CFG="$1"
+NAME="$2"
+SOCKS_PORT="${3:-1081}"
+TEXTDIR="{{ reality_e2e_textfile_dir }}"
+OUT="${TEXTDIR}/reality_e2e.prom"
+
+TEST_URL="${TEST_URL:-https://cp.cloudflare.com/generate_204}"
+TIMEOUT="${TIMEOUT:-8}"
+SLEEP_START="${SLEEP_START:-0.6}"
+
+mkdir -p "$TEXTDIR"
+tmpdir="$(mktemp -d)"
+cleanup(){ rm -rf "$tmpdir"; }
+trap cleanup EXIT
+
+sing-box run -c "$CFG" >"$tmpdir/sing.log" 2>&1 &
+pid=$!
+
+deadline=$(( $(date +%s) + 5 ))
+while ! ss -ltn "( sport = :${SOCKS_PORT} )" | grep -q LISTEN; do
+  [[ $(date +%s) -ge $deadline ]] && break
+  sleep 0.2
+done
+
+if ! ss -ltn "( sport = :${SOCKS_PORT} )" | grep -q LISTEN; then
+  echo "[e2e] SOCKS ${SOCKS_PORT} не поднялся. Лог sing-box (первые 200 строк):" >&2
+  sed -n '1,200p' "$tmpdir/sing.log" >&2 || true
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  exit 1
+fi
+
+start_ms=$(($(date +%s%N)/1000000))
+ok=0
+status="0"
+if curl -sS --max-time "$TIMEOUT" --socks5-hostname 127.0.0.1:"$SOCKS_PORT" "$TEST_URL" -o /dev/null -w "%{http_code}" >"$tmpdir/httpcode"; then
+  status="$(cat "$tmpdir/httpcode")"
+  if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then ok=1; fi
+fi
+end_ms=$(($(date +%s%N)/1000000))
+dur_ms=$((end_ms - start_ms))
+
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+
+ts=$(date +%s)
+
+nodefile="${TEXTDIR}/reality_e2e_${NAME}.tmp"
+cat >"$nodefile" <<EOF
+reality_e2e_ok{name="${NAME}"} $ok
+reality_e2e_http_status{name="${NAME}"} ${status}
+reality_e2e_duration_ms{name="${NAME}"} $dur_ms
+reality_e2e_last_run_ts{name="${NAME}"} $ts
+EOF
+
+cat "${TEXTDIR}"/reality_e2e_*.tmp > "${OUT}.tmp"
+mv -f "${OUT}.tmp" "${OUT}"
