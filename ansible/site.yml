@@ -8,6 +8,8 @@
     - { role: nginx, tags: [nginx] }    # reverse-proxy, certs, htpasswd
     - { role: hub, tags: [hub] }
     - { role: ru_probe, when: ru_probe_enabled | bool, tags: [ru_probe] }
+    - { role: sing_box, tags: [sing_box] }
+    - { role: reality_e2e, when: reality_e2e_enabled | bool, tags: [reality_e2e] }
 
 - name: VPN nodes
   hosts: vpn

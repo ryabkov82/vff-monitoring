@@ -11,6 +11,8 @@
 - Роль Docker (установка Docker Engine + Compose v2): [docs/docker-role.md](docs/docker-role.md)
 - Роль RU Probe (iperf3 throughput): [docs/ru-probe-role.md](docs/ru-probe-role.md)
 - Роль Speedtest (Ookla) (textfile метрики для node_exporter): [docs/speedtest_ookla.md](docs/speedtest_ookla.md)
+- Роль sing_box (установка бинаря sing-box): [docs/sing_box-role.md](docs/sing_box-role.md)
+- Роль Reality E2E (sing-box энд-ту-энд проверка): [docs/reality_e2e-role.md](docs/reality_e2e-role.md)
 
 ## Grafana — основные команды
 

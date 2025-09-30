@@ -1,0 +1,185 @@
+- name: Reality E2E | Ensure system user/group
+  ansible.builtin.user:
+    name: "{{ reality_e2e_user }}"
+    system: true
+    create_home: false
+  register: _usr
+  tags: [reality_e2e]
+
+- name: Reality E2E | Ensure group
+  ansible.builtin.group:
+    name: "{{ reality_e2e_group }}"
+    system: true
+  tags: [reality_e2e]
+
+- name: Reality E2E | Ensure textfile dir exists & writable by group
+  ansible.builtin.file:
+    path: "{{ reality_e2e_textfile_dir }}"
+    state: directory
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0775"
+  tags: [reality_e2e]
+
+- name: Reality E2E | Ensure cfg dir exists
+  ansible.builtin.file:
+    path: "{{ reality_e2e_cfg_dir }}"
+    state: directory
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0755"
+  tags: [reality_e2e]
+
+# ← ВСТАВЛЯЕМ РЕНДЕР ПРОФИЛЕЙ ЗДЕСЬ
+- name: Reality E2E | Render profiles from vpn_nodes
+  ansible.builtin.import_tasks: render_profiles.yml
+  tags: [reality_e2e, reality_e2e_profiles]
+
+- name: Reality E2E | Deploy probe script
+  ansible.builtin.template:
+    src: reality_e2e_probe.sh.j2
+    dest: "{{ reality_e2e_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Reality E2E | Deploy systemd units (template@)
+  ansible.builtin.template:
+    src: reality-e2e@.service.j2
+    dest: /etc/systemd/system/reality-e2e@.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Reality E2E | Deploy systemd timers (template@)
+  ansible.builtin.template:
+    src: reality-e2e@.timer.j2
+    dest: /etc/systemd/system/reality-e2e@.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Reality E2E | systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+# Включаем/запускаем таймеры для профилей, собранных в render_profiles.yml
+- name: Reality E2E | Enable timers for effective nodes
+  tags: [reality_e2e]
+  ansible.builtin.systemd:
+    name: "reality-e2e@{{ item.reality.profile_name | default(item.name) }}.timer"
+    enabled: true
+    state: started
+  loop: "{{ reality_e2e_nodes_eff | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - reality_e2e_nodes_eff is defined
+    - (reality_e2e_nodes_eff | length) > 0
+    - (item.reality.e2e_enabled | default(true)) | bool
+
+# === Reality E2E: prune stale profiles/timers/tmp (anything not enabled in vpn_nodes) ===
+
+- name: Reality E2E | Stat cfg/textfile dirs
+  tags: [reality_e2e]
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ reality_e2e_cfg_dir }}"
+    - "{{ reality_e2e_textfile_dir }}"
+  register: _e2e_dirs
+
+- name: Reality E2E | Helper flags for dirs
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _e2e_cfg_exists: >-
+      {{ (_e2e_dirs.results
+          | selectattr('stat.path', 'equalto', reality_e2e_cfg_dir)
+          | first).stat.exists | default(false) }}
+    _e2e_text_exists: >-
+      {{ (_e2e_dirs.results
+          | selectattr('stat.path', 'equalto', reality_e2e_textfile_dir)
+          | first).stat.exists | default(false) }}
+
+# enabled set из текущего inventory (имена профилей = имена нод)
+- name: Reality E2E | Build expected profile names (enabled)
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    reality_e2e_enabled_names: "{{ (reality_e2e_nodes_eff | default([])) | map(attribute='name') | list }}"
+
+# какие JSON/ENV сейчас лежат на диске
+- name: Reality E2E | List existing JSON/ENV in cfg dir
+  tags: [reality_e2e]
+  ansible.builtin.find:
+    paths: "{{ reality_e2e_cfg_dir }}"
+    patterns: ["*.json", "*.env"]
+    file_type: file
+    recurse: false
+    use_regex: false
+  register: _e2e_cfg_files
+  when: _e2e_cfg_exists
+
+# приводим .json/.env к «basename без расширения» и уникализируем
+- name: Reality E2E | Existing basenames -> names (json+env)
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _e2e_existing_names: >-
+      {{
+        (_e2e_cfg_files.files | default([]))
+        | map(attribute='path') | map('basename')
+        | map('regex_replace', '\.(json|env)$', '')
+        | list | unique
+      }}
+  when: _e2e_cfg_exists
+
+# лишние профили = есть на диске, но нет в enabled
+- name: Reality E2E | Compute stale profile names
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _e2e_stale_names: "{{ (_e2e_existing_names | default([])) | difference(reality_e2e_enabled_names | default([])) }}"
+
+# стоп/disable таймеров для лишних профилей
+- name: Reality E2E | Stop & disable timers for stale profiles
+  tags: [reality_e2e]
+  ansible.builtin.systemd:
+    name: "reality-e2e@{{ item }}.timer"
+    state: stopped
+    enabled: false
+  loop: "{{ _e2e_stale_names | default([]) }}"
+  loop_control:
+    label: "reality-e2e@{{ item }}.timer"
+  failed_when: false
+  when: (_e2e_stale_names | default([])) | length > 0
+
+# удалить их JSON/ENV
+- name: Reality E2E | Remove stale JSON/ENV files
+  tags: [reality_e2e]
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{
+      (_e2e_stale_names | default([]) | map('regex_replace', '^(.*)$', reality_e2e_cfg_dir ~ '/\1.json') | list)
+      +
+      (_e2e_stale_names | default([]) | map('regex_replace', '^(.*)$', reality_e2e_cfg_dir ~ '/\1.env')  | list)
+    }}
+  when:
+    - _e2e_cfg_exists
+    - (_e2e_stale_names | default([])) | length > 0
+
+# и их tmp (чтобы не висели в метриках)
+- name: Reality E2E | Remove stale textfile tmp
+  tags: [reality_e2e]
+  ansible.builtin.file:
+    path: "{{ reality_e2e_textfile_dir }}/reality_e2e_{{ item }}.tmp"
+    state: absent
+  loop: "{{ _e2e_stale_names | default([]) }}"
+  when:
+    - _e2e_text_exists
+    - (_e2e_stale_names | default([])) | length > 0
+
+- name: Reality E2E | systemd daemon-reload (after prune)
+  tags: [reality_e2e]
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: (_e2e_stale_names | default([])) | length > 0

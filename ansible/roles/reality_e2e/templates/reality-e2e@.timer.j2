@@ -1,0 +1,11 @@
+[Unit]
+Description=REALITY E2E probe timer (%i)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=300s
+AccuracySec=15s
+Unit=reality-e2e@%i.service
+
+[Install]
+WantedBy=timers.target

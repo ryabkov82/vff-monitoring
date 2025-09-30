@@ -1,0 +1,19 @@
+[Unit]
+Description=REALITY E2E probe (%i)
+
+[Service]
+Type=oneshot
+User={{ reality_e2e_user }}
+Group={{ reality_e2e_group }}
+Environment=NAME=%i
+Environment=SOCKS_PORT=1081
+Environment=SLEEP_START=2
+# Environment=DEBUG=1
+Environment=TEXTDIR={{ reality_e2e_textfile_dir }}
+
+EnvironmentFile=-{{ reality_e2e_cfg_dir }}/%i.env
+
+ExecStart=/bin/bash -lc '{{ reality_e2e_script_path }} \
+  {{ reality_e2e_cfg_dir }}/%i.json \
+  "${NAME:-%i}" \
+  "${SOCKS_PORT:-1081}"'

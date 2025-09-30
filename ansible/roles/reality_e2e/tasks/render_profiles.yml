@@ -1,0 +1,165 @@
+---
+# === REALITY E2E: рендер профилей sing-box по vpn_nodes ======================
+
+- name: Reality E2E | Assert shared secrets are provided (uuid/public_key/short_id)
+  ansible.builtin.assert:
+    that:
+      - reality_e2e_shared is defined
+      - reality_e2e_shared.uuid | default('') | length > 0
+      - reality_e2e_shared.public_key | default('') | length > 0
+      - reality_e2e_shared.short_id | default('') | length > 0
+    fail_msg: >
+      reality_e2e_shared.{uuid, public_key, short_id} must be defined (рекомендуется хранить в group_vars/hub/vault.yml).
+  tags: [reality_e2e]
+
+- name: Reality E2E | Compute cfg dir from monitoring_root (if not set)
+  ansible.builtin.set_fact:
+    reality_e2e_cfg_dir: "{{ reality_e2e_cfg_dir | default(monitoring_root ~ '/ru-probe/reality') }}"
+  tags: [reality_e2e]
+
+- name: Reality E2E | Ensure cfg dir exists
+  ansible.builtin.file:
+    path: "{{ reality_e2e_cfg_dir }}"
+    state: directory
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0755"
+  tags: [reality_e2e]
+
+# ---- Автодетект server из ~/.ssh/config -------------------------------------
+
+- name: Reality E2E | Parse ~/.ssh/config on controller (Host -> HostName)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    awk '
+      tolower($1)=="host"     { host=$2; next }
+      tolower($1)=="hostname" { if (host!="") {print host" "$2; host=""} }
+    ' ~/.ssh/config | awk '{printf "%s=%s\n",$1,$2}'
+  args:
+    executable: /bin/bash
+  delegate_to: localhost
+  run_once: true
+  register: sshcfg
+  changed_when: false
+  failed_when: false
+  tags: [reality_e2e]
+
+- name: Reality E2E | Build ssh_hostmap dict
+  ansible.builtin.set_fact:
+    reality_e2e_ssh_hostmap: >-
+      {{
+        dict(
+          (sshcfg.stdout_lines | default([]))
+          | map('split', '=', 1)
+          | map('list')
+        )
+      }}
+  run_once: true
+  tags: [reality_e2e]
+
+# ---- Выбор узлов и вычисление server_effective --------------------------------
+
+# Берём только узлы, где включён e2e (явно): reality.e2e_enabled: true
+- name: Reality E2E | Select nodes with e2e enabled
+  ansible.builtin.set_fact:
+    reality_e2e_nodes: >-
+      {{
+        (vpn_nodes | default([]))
+        | selectattr('reality', 'defined')
+        | selectattr('reality.e2e_enabled', 'defined')
+        | selectattr('reality.e2e_enabled')
+        | list
+      }}
+  tags: [reality_e2e]
+
+# === Compute effective server  ===
+- name: Reality E2E | Init effective nodes list
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    reality_e2e_nodes_eff: []
+
+- name: Reality E2E | Compute effective server per node
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    reality_e2e_nodes_eff: >-
+      {{
+        reality_e2e_nodes_eff + [
+          item
+          | combine({
+              'reality': (item.reality | default({}))
+                         | combine({
+                             'server_effective': (
+                               item.reality.server
+                               | default(
+                                   reality_e2e_ssh_hostmap[item.name]
+                                   | default(hostvars[item.name].ansible_host | default(''))
+                                 )
+                             )
+                           }, recursive=True)
+            }, recursive=True)
+        ]
+      }}
+  loop: "{{ reality_e2e_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Reality E2E | Assert server can be resolved
+  tags: [reality_e2e]
+  ansible.builtin.assert:
+    that:
+      - item.reality.server_effective | length > 0
+    fail_msg: >-
+      Node {{ item.name }}: cannot resolve REALITY server
+      (set vpn_nodes[*].reality.server OR have HostName in ~/.ssh/config
+      OR define ansible_host).
+  loop: "{{ reality_e2e_nodes_eff }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ---- Рендер профилей ----------------------------------------------------------
+
+- name: Reality E2E | Render JSON profiles (sing-box config)
+  ansible.builtin.template:
+    src: "reality_profile.json.j2"
+    dest: "{{ reality_e2e_cfg_dir }}/{{ item.name }}.json"
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0644"
+  loop: "{{ reality_e2e_nodes_eff }}"
+  loop_control:
+    label: "{{ item.name }}"
+  vars:
+    eff_server: "{{ item.reality.server_effective }}"
+    eff_sni: >-
+      {{ item.reality.sni | default(reality_e2e_shared.sni | default('')) }}
+    eff_socks_port: >-
+      {{ item.reality.socks_port | default(reality_e2e_defaults.socks_port | default(1081)) }}
+    eff_flow: >-
+      {{ item.reality.flow | default(reality_e2e_defaults.flow | default('')) }}
+    eff_log_level: >-
+      {{ item.reality.log_level | default(reality_e2e_defaults.log_level | default('warn')) }}
+    eff_http_url: >-
+      {{ reality_e2e_defaults.http_test_url | default('https://cp.cloudflare.com/generate_204') }}
+    eff_http_timeout: >-
+      {{ reality_e2e_defaults.http_timeout | default(8) }}
+  tags: [reality_e2e]
+
+- name: Reality E2E | Render per-node ENV file
+  ansible.builtin.template:
+    src: "reality_profile.env.j2"
+    dest: "{{ reality_e2e_cfg_dir }}/{{ item.name }}.env"
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0644"
+  loop: "{{ reality_e2e_nodes_eff }}"
+  loop_control:
+    label: "{{ item.name }}"
+  vars:
+    eff_name: "{{ item.name }}"
+    eff_socks_port: >-
+      {{ item.reality.socks_port | default(reality_e2e_defaults.socks_port | default(1081)) }}
+    eff_http_url: >-
+      {{ reality_e2e_defaults.http_test_url | default('https://cp.cloudflare.com/generate_204') }}
+    eff_http_timeout: >-
+      {{ reality_e2e_defaults.http_timeout | default(8) }}
+  tags: [reality_e2e]

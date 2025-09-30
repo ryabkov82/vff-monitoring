@@ -1,0 +1,15 @@
+sing_box_version: "1.12.8"
+sing_box_bin_dir: /usr/local/bin
+sing_box_bin_path: "{{ sing_box_bin_dir }}/sing-box"
+
+# x86_64/amd64 → linux-amd64, arm64 → linux-arm64
+sing_box_arch: >-
+  {{ 'linux-amd64' if ansible_architecture in ['x86_64', 'amd64']
+     else 'linux-arm64' if ansible_architecture in ['aarch64', 'arm64']
+     else 'linux-amd64' }}
+
+sing_box_tarball_url: >-
+  https://github.com/SagerNet/sing-box/releases/download/v{{ sing_box_version }}/sing-box-{{ sing_box_version }}-{{ sing_box_arch }}.tar.gz
+
+# Если указан sha256 — проверим; если пусто — пропустим проверку
+sing_box_tarball_sha256: ""

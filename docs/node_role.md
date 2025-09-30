@@ -81,7 +81,7 @@ node_reality_textfile_dir: "/var/lib/node_exporter/textfile"
 
 ## Теги роли
 
-| Подзадача                            | Теги                                 |
+| Подзадача                           | Теги                                  |
 |-------------------------------------|---------------------------------------|
 | iperf3 server                       | `node`, `node_iperf`, `iperf3`        |
 | if_speed (textfile)                 | `node_if_speed`                       |

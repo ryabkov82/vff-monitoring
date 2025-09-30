@@ -1,0 +1,31 @@
+reality_e2e_enabled: true
+reality_e2e_user: node_exporter
+reality_e2e_group: node_exporter
+
+reality_e2e_textfile_dir: /var/lib/node_exporter/textfile
+reality_e2e_bin_sing_box: /usr/local/bin/sing-box   # путь к бинарю sing-box
+reality_e2e_install_sing_box: false                 # если хочешь — добавим установку из tgz позже
+
+# Куда положить скрипт
+reality_e2e_script_path: /usr/local/bin/reality_e2e_probe.sh
+
+# базовый корень всего мониторинга
+monitoring_root: "/opt/vff-monitoring"
+
+# каталог для JSON/ENV профилей e2e (строится от monitoring_root)
+reality_e2e_cfg_dir: "{{ monitoring_root }}/ru-probe/reality"
+
+reality_e2e_defaults:
+  socks_port: 1081
+  flow: ""
+  log_level: "warn"
+  http_test_url: "https://cp.cloudflare.com/generate_204"
+  http_timeout: 8
+  cfg_dir: "{{ reality_e2e_cfg_dir }}"
+
+# пустые плейсхолдеры — чтобы роль не падала при отсутствии group_vars
+reality_e2e_shared:
+  uuid: ""
+  public_key: ""
+  short_id: ""
+  sni: ""
