@@ -5,35 +5,47 @@
     mode: "0644"
   notify: Prometheus reload
 
-- name: Render rules
+# Собирам список шаблонов один раз (и упорядочиваем)
+- name: Collect rules/targets templates
+  ansible.builtin.set_fact:
+    _rules_tpls: "{{ query('fileglob', role_path ~ '/templates/rules/*.yml.j2') | sort }}"
+    _targets_tpls: "{{ query('fileglob', role_path ~ '/templates/targets/*.json.j2') | sort }}"
+
+# Рендерим все rules/*.yml.j2 -> <monitoring_root>/prometheus/rules/*.yml
+- name: Render Prometheus rules (auto)
   ansible.builtin.template:
-    src: "rules/{{ item }}.yml.j2"
-    dest: "{{ monitoring_root }}/prometheus/rules/{{ item }}.yml"
+    # src должен быть путём относительно каталога templates роли
+    src: "{{ item | regex_replace('^' ~ (role_path ~ '/templates/'), '') }}"
+    dest: "{{ monitoring_root }}/prometheus/rules/{{ (item | basename) | regex_replace('\\.yml\\.j2$', '.yml') }}"
     mode: "0644"
-  loop:
-    - rec-network
-    - rec-blackbox
-    - rec-wireguard
-    - rec-ru-probe
-    - rec-speedtest
-    - rec-reality
-    - rec-reality-e2e
-    - alerts-wireguard
-    - alerts-availability
-    - alerts-ru-probe
-    - alerts-network
-    - alerts-speedtest
-    - alerts-reality-e2e
-    - alerts-reality
+  loop: "{{ _rules_tpls }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: _rules_tpls | length > 0
   notify: Prometheus reload
 
-- name: Render targets (file_sd)
+- name: Build ru-probe targets (effective)
+  ansible.builtin.set_fact:
+    ru_probe_targets_eff: >-
+      {{
+        ru_probe_targets
+          | default([{
+              'address': (ru_probe_address | default(inventory_hostname ~ ':9100')),
+              'labels': {
+                'name': (ru_probe_name | default('RU-probe (' ~ inventory_hostname ~ ')')),
+                'role': 'probe'
+              }
+            }])
+      }}
+
+# Рендерим все targets/*.json.j2 -> <monitoring_root>/prometheus/targets/*.json
+- name: Render Prometheus targets (file_sd, auto)
   ansible.builtin.template:
-    src: "targets/{{ item }}.json.j2"
-    dest: "{{ monitoring_root }}/prometheus/targets/{{ item }}.json"
+    src: "{{ item | regex_replace('^' ~ (role_path ~ '/templates/'), '') }}"
+    dest: "{{ monitoring_root }}/prometheus/targets/{{ (item | basename) | regex_replace('\\.json\\.j2$', '.json') }}"
     mode: "0644"
-  loop:
-    - nodes
-    - bb-icmp
-    - bb-tcp443
+  loop: "{{ _targets_tpls }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: _targets_tpls | length > 0
   notify: Prometheus reload

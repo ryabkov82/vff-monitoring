@@ -20,7 +20,7 @@
 - name: Grafana export | Compute folder & filename (sources)
   ansible.builtin.set_fact:
     _folder_src: "{{ _dash.json.meta.folderTitle | default('General') }}"
-    _file_src: "{{ _dash.json.dashboard.title }}"
+    _file_src: "{{ _dash.json.dashboard.uid }}"
 
 - name: Grafana export | Sanitize folder & filename
   ansible.builtin.set_fact:

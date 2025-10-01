@@ -4,6 +4,10 @@
   ansible.builtin.import_tasks: setup.yml
   tags: [setup]
 
+- name: Import Docker Compose tasks
+  ansible.builtin.import_tasks: compose.yml
+  tags: [compose]
+
 - name: Import Grafana tasks
   ansible.builtin.import_tasks: grafana.yml
   tags: [grafana]
