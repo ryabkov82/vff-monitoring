@@ -1,12 +1,64 @@
 groups:
 - name: alerts-wireguard
   rules:
+  # Пир OFFLINE: connected=0 стабильно ≥5м
   - alert: WGPeerDown
-    expr: wg:peer:connected == 0
+    expr: min_over_time(wg:peer:connected[2m]) == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: |
+        {% raw %}Peer on {{ $labels.instance }} has not been connected for 5m (if={{ $labels.interface }}).{% endraw %}
+
+      description: |
+        {% raw %}peer={{ $labels.peer }}, endpoint={{ $labels.endpoint }}, instance={{ $labels.instance }}{% endraw %}
+
+  # Рукопожатие старше 5 минут (включая «никогда не было»)
+  - alert: WGLatestHandshakeOld
+    expr: wg:peer:handshake_age_seconds > 300
     for: 5m
     labels:
       severity: warning
     annotations:
-      summary: "WireGuard peer appears down"
-      description: >-
-        {% raw %}Peer on {{ $labels.instance }} has not been connected for 5m.{% endraw %}
+      summary: |
+        {% raw %}WireGuard latest handshake is older than 5m on {{ $labels.instance }} / {{ $labels.interface }}{% endraw %}
+
+      description: |
+        {% raw %}peer={{ $labels.peer }}, endpoint={{ $labels.endpoint }}, age_s={{ printf "%.0f" $value }}{% endraw %}
+
+  # Нет трафика по пиру (оба направления) при "connected=1"
+  # Суммируем RX+TX за 15 мин, игнорируя label endpoint.
+  - alert: WGPeerNoTraffic
+    expr: |
+      (wg:peer:connected == 1)
+      and on (instance, interface, peer)
+      (
+        sum without (direction, endpoint) (
+          increase(wireguard_peer_transfer_bytes_total[15m])
+        ) < 102400
+      )
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}No traffic ≥15m for peer on {{ $labels.instance }} / {{ $labels.interface }}{% endraw %}
+
+      description: |
+        {% raw %}peer={{ $labels.peer }}, endpoint={{ $labels.endpoint }}{% endraw %}
+
+  # Флап endpoint: в течение 30 минут ≥8 минут наблюдались одновременно ≥2 endpoint
+  - alert: WGEndpointFlap
+    expr: |
+      sum_over_time(
+        (count without (endpoint) (wireguard_peer_connected) > 1)[30m:1m]
+      ) >= 8
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}Endpoint flapping on {{ $labels.instance }} / {{ $labels.interface }}{% endraw %}
+
+      description: |
+        {% raw %}peer={{ $labels.peer }}; current endpoint={{ $labels.endpoint }}; frequent changes observed over 30m{% endraw %}

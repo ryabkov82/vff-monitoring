@@ -1,7 +1,35 @@
 groups:
 - name: rec-wireguard
   rules:
-  - record: wg:peer:connected
-    expr: max by (peer, instance) (wg_peer_connected) or on() vector(0)
+  # --- Handshake age (секунды с момента последнего рукопожатия) ---
+  # Дедуп по (instance,name,role,interface,peer,endpoint), затем time() - значение.
   - record: wg:peer:handshake_age_seconds
-    expr: max by (peer, instance) (wg_peer_latest_handshake_seconds_ago)
+    expr: |
+      clamp_min(
+        time() -
+        max by (instance, name, role, interface, peer, endpoint) (wireguard_peer_latest_handshake_seconds)
+      , 0)
+
+  # --- Онлайн-статус пира (0/1), со сглаживанием за 1 минуту ---
+  - record: wg:peer:connected
+    expr: |
+      max by (instance, name, role, interface, peer, endpoint) (
+        max_over_time(wireguard_peer_connected[1m])
+      )
+
+  # --- Скорости по пиру (бит/с), RX/TX и сумма ---
+  # Дедупликация серий через sum by(...) (например, если одна и та же метрика прилетит из разных jobs)
+  - record: wg:peer:rx_bps
+    expr: |
+      8 * sum by (instance, name, role, interface, peer, endpoint) (
+        rate(wireguard_peer_transfer_bytes_total{direction="rx"}[5m])
+      )
+
+  - record: wg:peer:tx_bps
+    expr: |
+      8 * sum by (instance, name, role, interface, peer, endpoint) (
+        rate(wireguard_peer_transfer_bytes_total{direction="tx"}[5m])
+      )
+
+  - record: wg:peer:total_bps
+    expr: wg:peer:rx_bps + wg:peer:tx_bps

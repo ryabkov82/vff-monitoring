@@ -15,10 +15,16 @@
     - rec-blackbox
     - rec-wireguard
     - rec-ru-probe
+    - rec-speedtest
+    - rec-reality
+    - rec-reality-e2e
     - alerts-wireguard
     - alerts-availability
     - alerts-ru-probe
     - alerts-network
+    - alerts-speedtest
+    - alerts-reality-e2e
+    - alerts-reality
   notify: Prometheus reload
 
 - name: Render targets (file_sd)

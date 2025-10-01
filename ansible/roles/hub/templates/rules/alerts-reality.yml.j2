@@ -1,0 +1,81 @@
+groups:
+- name: reality-svc
+  rules:
+  # Контейнер реально не работает (не running)
+  - alert: RealitySvcDown
+    expr: reality:svc:up == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: |
+        {% raw %}REALITY контейнер не работает: {{ $labels.name }}{% endraw %}
+
+      description: |
+        {% raw %}Контейнер XRAY/Marzban не в состоянии running 5+ минут (host {{ $labels.host }}).{% endraw %}
+
+  # Порт 443 перестал слушать
+  - alert: RealityPortNotListening
+    expr: reality:svc:port_listen == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: |
+        {% raw %}Порт 443 не слушает: {{ $labels.name }}{% endraw %}
+
+      description: |
+        {% raw %}На хосте {{ $labels.host }} порт 443 не в LISTEN 5+ минут.{% endraw %}
+
+  # Рестарты контейнера (рост Docker RestartCount за короткий интервал)
+  - alert: RealitySvcRestartSpike
+    expr: reality:svc:restarts_5m > 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: |
+        {% raw %}REALITY: рестарт контейнера ({{ $labels.name }}){% endraw %}
+
+      description: |
+        {% raw %}За последние 5 минут зафиксирован рост RestartCount на {{ $labels.host }}.{% endraw %}
+
+  # Недавний старт контейнера (ловит ручные пересоздания; игнор ребута узла)
+  - alert: RealitySvcRecentlyStarted
+    expr: (reality:svc:uptime_seconds < 300)
+          and on(name) (time() - node_boot_time_seconds > 600)
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}REALITY: недавний старт контейнера ({{ $labels.name }}){% endraw %}
+
+      description: |
+        {% raw %}Контейнер стартовал <5 минут назад, узел {{ $labels.host }} не перезагружался.{% endraw %}
+
+  # Флаппинг up/down (частые смены статуса)
+  - alert: RealitySvcFlapping
+    expr: reality:svc:flapping_15m == 1
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}REALITY: флаппинг доступности ({{ $labels.name }}){% endraw %}
+
+      description: |
+        {% raw %}За 15 минут ≥4 смены статуса reality_svc_up на {{ $labels.host }}.{% endraw %}
+
+  # Метрики не обновляются (сломался таймер/скрипт)
+  - alert: RealitySvcMetricsStale
+    expr: reality:svc:last_update_age_seconds > 300
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}REALITY: метрики не обновлялись ({{ $labels.name }}){% endraw %}
+
+      description: |
+        {% raw %}reality_svc_* не обновлялись >5 минут (host {{ $labels.host }}). Проверь таймер/скрипт.{% endraw %}

@@ -1,0 +1,46 @@
+groups:
+- name: alerts-speedtest
+  rules:
+  - alert: InternetSpeedDownloadDrop
+    # Условие: ratio < 0.7 (падение > 30%)
+    # Доп. условия: свежий прогон и база >100 Мбит/с (чтобы не шуметь)
+    expr: |
+      (node:internet_download_ratio:latest_vs_baseline7d < 0.7)
+      and on (name) (node:internet_speed_last_age_seconds < 48h)
+      and on (name) (node:internet_download_bps:baseline7d > 100e6)
+    for: 6h
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}Падение download на {{ $labels.name }} (>30% относительно 7-дневной базы){% endraw %}
+
+      description: |
+        Последний DL заметно ниже исторического уровня за прошлую неделю. Проверь узел и аплинк.
+
+  - alert: InternetSpeedUploadDrop
+    expr: |
+      (node:internet_upload_ratio:latest_vs_baseline7d < 0.7)
+      and on (name) (node:internet_speed_last_age_seconds < 48h)
+      and on (name) (node:internet_upload_bps:baseline7d > 50e6)
+    for: 6h
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}Падение upload на {{ $labels.name }} (>30% относительно 7-дневной базы){% endraw %}
+
+      description: |
+        Последний UL заметно ниже исторического уровня за прошлую неделю. Проверь узел и аплинк.
+
+  - alert: InternetSpeedProbeStale
+    expr: node:internet_speed_last_age_seconds > 48h
+    for: 2h
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}Speedtest давно не выполнялся на {{ $labels.name }}{% endraw %}
+
+      description: |
+        Давность последнего результата превышает 48 часов.

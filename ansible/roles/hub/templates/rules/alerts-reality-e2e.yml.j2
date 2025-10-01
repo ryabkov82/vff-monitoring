@@ -1,0 +1,28 @@
+groups:
+- name: alerts-reality-e2e
+  rules:
+  - alert: RealityE2EFailed
+    expr: reality:e2e:ok == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: |
+        {% raw %}REALITY E2E: сбой на узле {{ $labels.name }}{% endraw %}
+
+      description: |
+        E2E проверка через SOCKS не проходит ≥2 минуты. Проверь RU-probe (sing-box/таймер),
+        доступ к целевому хосту и маршрут до узла.
+
+  - alert: RealityE2EStale
+    expr: reality:e2e:last_run_age_seconds > 15m
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: |
+        {% raw %}REALITY E2E: нет свежих данных для {{ $labels.name }}{% endraw %}
+
+      description: |
+        Метрики E2E не обновлялись более 15 минут. Проверь таймер systemd, логи скрипта и
+        доступность каталога Prometheus textfile.
