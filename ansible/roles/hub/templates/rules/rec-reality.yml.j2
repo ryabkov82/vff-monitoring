@@ -1,0 +1,32 @@
+groups:
+- name: rec-reality
+  rules:
+  # Бинарные статусы (берём последнее по name; метрики приходят из job="node")
+  - record: reality:svc:up
+    expr: max by (name) (reality_svc_up{job="node"})
+  - record: reality:svc:port_listen
+    expr: max by (name) (reality_svc_port_listen{job="node"})
+
+  # Аптайм контейнера (в секундах)
+  - record: reality:svc:uptime_seconds
+    expr: max by (name) (time() - reality_svc_started_seconds{job="node"})
+
+  # Возраст последнего обновления textfile-метрик
+  - record: reality:svc:last_update_age_seconds
+    expr: max by (name) (time() - reality_svc_last_check_seconds{job="node"})
+
+  # Рост счётчика рестартов за интервалы (для графов и триггеров)
+  - record: reality:svc:restarts_5m
+    expr: sum by (name) (increase(reality_svc_restart_count{job="node"}[5m]))
+  - record: reality:svc:restarts_1h
+    expr: sum by (name) (increase(reality_svc_restart_count{job="node"}[1h]))
+  - record: reality:svc:restarts_24h
+    expr: sum by (name) (increase(reality_svc_restart_count{job="node"}[24h]))
+
+  # Индикатор «флаппинга» (частые смены up/down)
+  - record: reality:svc:flapping_15m
+    expr: changes(reality_svc_up{job="node"}[15m]) >= 4
+
+  # Инфо-ряд для табличек/лейблов (оставляем как 1 с нужными лейблами)
+  - record: reality:svc:info
+    expr: max by (name, host, detail) (reality_svc_info{job="node"})

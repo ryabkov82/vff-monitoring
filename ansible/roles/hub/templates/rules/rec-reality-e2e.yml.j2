@@ -1,0 +1,11 @@
+groups:
+- name: rec-reality-e2e
+  rules:
+  - record: reality:e2e:ok
+    expr: max by (name) (reality_e2e_ok)
+
+  - record: reality:e2e:last_run_age_seconds
+    expr: time() - max by (name) (reality_e2e_last_run_ts)
+
+  - record: reality:e2e:duration_ms
+    expr: max by (name) (reality_e2e_duration_ms)

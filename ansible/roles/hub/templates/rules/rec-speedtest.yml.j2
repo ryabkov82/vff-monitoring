@@ -1,0 +1,37 @@
+groups:
+- name: rec-speedtest
+  rules:
+  - record: node:internet_download_bps:latest
+    expr: max without(method, server, server_location, server_id) (
+            max_over_time(vpn_speed_download_bps{method="ookla"}[1h])
+          )
+
+  - record: node:internet_upload_bps:latest
+    expr: max without(method, server, server_location, server_id) (
+            max_over_time(vpn_speed_upload_bps{method="ookla"}[1h])
+          )
+
+  - record: node:internet_speed_last_age_seconds
+    expr: time() - max without(method, server, server_location, server_id) (
+            max_over_time(vpn_speed_last_run_timestamp_seconds{method="ookla"}[24h])
+          )
+
+  # База (baseline) — 75-й перцентиль за 7 дней, со сдвигом на сутки назад
+  - record: node:internet_download_bps:baseline7d
+    expr: |
+      max without(method, server, server_location, server_id) (
+        quantile_over_time(0.75, vpn_speed_download_bps{method="ookla"}[7d] offset 24h)
+      )
+
+  - record: node:internet_upload_bps:baseline7d
+    expr: |
+      max without(method, server, server_location, server_id) (
+        quantile_over_time(0.75, vpn_speed_upload_bps{method="ookla"}[7d] offset 24h)
+      )
+
+  # Отношение к базе (ratio)
+  - record: node:internet_download_ratio:latest_vs_baseline7d
+    expr: node:internet_download_bps:latest / clamp_min(node:internet_download_bps:baseline7d, 1)
+
+  - record: node:internet_upload_ratio:latest_vs_baseline7d
+    expr: node:internet_upload_bps:latest / clamp_min(node:internet_upload_bps:baseline7d, 1)
