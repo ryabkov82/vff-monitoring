@@ -129,7 +129,6 @@ flowchart LR
 
 - Роль **Hub** (Prometheus/Grafana/Alertmanager/Blackbox): [docs/hub-role.md](docs/hub-role.md)
 - **Роль Node** (iperf3, if_speed, REALITY, WireGuard‑метрики): [docs/node_role.md](docs/node_role.md)
-- Добавление нового VPN‑узла: [docs/NEW_NODE.md](docs/NEW_NODE.md)
 - Роль Grafana (provisioning, экспорт/импорт дашбордов, токены): [docs/grafana-role.md](docs/grafana-role.md)
 - Роли WireGuard (hub/node): [docs/wireguard-roles.md](docs/wireguard-roles.md)
 - Роль node_exporter: [docs/node-exporter-role.md](docs/node-exporter-role.md)
@@ -157,7 +156,7 @@ make hub
 make grafana
 ```
 
-Онбординг нового узла (WG + агенты + обновления на хабе):
+Онбординг нового узла (WG + агенты + обновления на хабе) [docs/NEW_NODE.md](docs/NEW_NODE.md):
 
 ```bash
 # Полный сценарий
