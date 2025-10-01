@@ -128,8 +128,8 @@ flowchart LR
 ## Runbooks / Документация по ролям
 
 - Роль **Hub** (Prometheus/Grafana/Alertmanager/Blackbox): [docs/hub-role.md](docs/hub-role.md)
-- Добавление нового VPN‑узла: [docs/NEW_NODE.md](docs/NEW_NODE.md)
 - **Роль Node** (iperf3, if_speed, REALITY, WireGuard‑метрики): [docs/node_role.md](docs/node_role.md)
+- Добавление нового VPN‑узла: [docs/NEW_NODE.md](docs/NEW_NODE.md)
 - Роль Grafana (provisioning, экспорт/импорт дашбордов, токены): [docs/grafana-role.md](docs/grafana-role.md)
 - Роли WireGuard (hub/node): [docs/wireguard-roles.md](docs/wireguard-roles.md)
 - Роль node_exporter: [docs/node-exporter-role.md](docs/node-exporter-role.md)
@@ -207,9 +207,10 @@ make reality-e2e-run PROFILE=p    # разовый запуск сервиса �
 
 ## Требования
 
-- Хаб: Docker Engine + Compose v2.
-- Prometheus с `--web.enable-lifecycle` для hot‑reload.
-- Узлы: `node_exporter` с textfile‑коллектором; права на каталог textfile.
+- Ansible 2.15+
+- Docker Engine + Docker Compose v2 на хабе (роль `docker`)
+- Доступ по SSH к хабу и узлам, корректные `ansible/hosts.ini`
+- Для экспорта/импорта Grafana — сервисный токен или admin‑логин/пароль
 - Для E2E: установленный `sing-box` (роль `sing_box`).
 
 ---
