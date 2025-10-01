@@ -4,7 +4,9 @@ Description=REALITY E2E probe timer (%i)
 [Timer]
 OnBootSec=30s
 OnUnitActiveSec=300s
+RandomizedDelaySec=60s
 AccuracySec=15s
+Persistent=true
 Unit=reality-e2e@%i.service
 
 [Install]

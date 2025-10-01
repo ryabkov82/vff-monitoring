@@ -10,10 +10,18 @@ Environment=SOCKS_PORT=1081
 Environment=SLEEP_START=2
 # Environment=DEBUG=1
 Environment=TEXTDIR={{ reality_e2e_textfile_dir }}
+Environment=LOCKFILE=/run/reality-e2e.lock
+
+# на всякий случай увеличим бюджет времени на старт одной пробы
+TimeoutStartSec=6min
 
 EnvironmentFile=-{{ reality_e2e_cfg_dir }}/%i.env
 
-ExecStart=/bin/bash -lc '{{ reality_e2e_script_path }} \
-  {{ reality_e2e_cfg_dir }}/%i.json \
-  "${NAME:-%i}" \
-  "${SOCKS_PORT:-1081}"'
+ExecStart=/usr/bin/flock -w 300 "${LOCKFILE}" \
+  /bin/bash -lc '{{ reality_e2e_script_path }} \
+    {{ reality_e2e_cfg_dir }}/%i.json \
+    "${NAME:-%i}" \
+    "${SOCKS_PORT:-1081}"'
+
+StandardOutput=journal
+StandardError=journal

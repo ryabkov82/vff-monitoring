@@ -1,0 +1,27 @@
+---
+- name: Reality E2E | Ensure system user
+  ansible.builtin.user:
+    name: "{{ reality_e2e_user }}"
+    system: true
+    create_home: false
+
+- name: Reality E2E | Ensure group
+  ansible.builtin.group:
+    name: "{{ reality_e2e_group }}"
+    system: true
+
+- name: Reality E2E | Ensure textfile dir exists & writable by group
+  ansible.builtin.file:
+    path: "{{ reality_e2e_textfile_dir }}"
+    state: directory
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0775"
+
+- name: Reality E2E | Ensure cfg dir exists
+  ansible.builtin.file:
+    path: "{{ reality_e2e_cfg_dir }}"
+    state: directory
+    owner: root
+    group: "{{ reality_e2e_group }}"
+    mode: "0755"

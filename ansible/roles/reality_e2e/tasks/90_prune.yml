@@ -1,0 +1,82 @@
+---
+- name: Reality E2E | Stat cfg/textfile dirs
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ reality_e2e_cfg_dir }}"
+    - "{{ reality_e2e_textfile_dir }}"
+  register: _e2e_dirs
+
+- name: Reality E2E | Helper flags for dirs
+  ansible.builtin.set_fact:
+    _e2e_cfg_exists: >-
+      {{ (_e2e_dirs.results
+          | selectattr('stat.path', 'equalto', reality_e2e_cfg_dir)
+          | first).stat.exists | default(false) }}
+    _e2e_text_exists: >-
+      {{ (_e2e_dirs.results
+          | selectattr('stat.path', 'equalto', reality_e2e_textfile_dir)
+          | first).stat.exists | default(false) }}
+
+- name: Reality E2E | Build enabled profile names
+  ansible.builtin.set_fact:
+    reality_e2e_enabled_names: "{{ (reality_e2e_nodes_eff | default([])) | map(attribute='name') | list }}"
+
+- name: Reality E2E | List existing JSON/ENV in cfg dir
+  ansible.builtin.find:
+    paths: "{{ reality_e2e_cfg_dir }}"
+    patterns: ["*.json", "*.env"]
+    file_type: file
+    recurse: false
+    use_regex: false
+  register: _e2e_cfg_files
+  when: _e2e_cfg_exists
+
+- name: Reality E2E | Existing basenames -> names (json+env)
+  ansible.builtin.set_fact:
+    _e2e_existing_names: >-
+      {{
+        (_e2e_cfg_files.files | default([]))
+        | map(attribute='path') | map('basename')
+        | map('regex_replace', '\.(json|env)$', '')
+        | list | unique
+      }}
+  when: _e2e_cfg_exists
+
+- name: Reality E2E | Compute stale profile names
+  ansible.builtin.set_fact:
+    _e2e_stale_names: "{{ (_e2e_existing_names | default([])) | difference(reality_e2e_enabled_names | default([])) }}"
+
+- name: Reality E2E | Stop & disable timers for stale profiles
+  ansible.builtin.systemd:
+    name: "reality-e2e@{{ item }}.timer"
+    state: stopped
+    enabled: false
+  loop: "{{ _e2e_stale_names | default([]) }}"
+  loop_control:
+    label: "reality-e2e@{{ item }}.timer"
+  failed_when: false
+  when: (_e2e_stale_names | default([])) | length > 0
+
+- name: Reality E2E | Remove stale JSON/ENV files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{
+      (_e2e_stale_names | default([]) | map('regex_replace', '^(.*)$', reality_e2e_cfg_dir ~ '/\1.json') | list)
+      +
+      (_e2e_stale_names | default([]) | map('regex_replace', '^(.*)$', reality_e2e_cfg_dir ~ '/\1.env')  | list)
+    }}
+  when:
+    - _e2e_cfg_exists
+    - (_e2e_stale_names | default([])) | length > 0
+
+- name: Reality E2E | Remove stale textfile tmp
+  ansible.builtin.file:
+    path: "{{ reality_e2e_textfile_dir }}/reality_e2e_{{ item }}.tmp"
+    state: absent
+  loop: "{{ _e2e_stale_names | default([]) }}"
+  when:
+    - _e2e_text_exists
+    - (_e2e_stale_names | default([])) | length > 0

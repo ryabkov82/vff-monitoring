@@ -1,0 +1,8 @@
+---
+# здесь можно делать финальные проверки/метрики/отладку при нужных флагах
+- name: Reality E2E | Debug summary (optional)
+  ansible.builtin.debug:
+    msg:
+      enabled_names: "{{ reality_e2e_enabled_names | default([]) }}"
+      stale_names: "{{ _e2e_stale_names | default([]) }}"
+  when: reality_e2e_debug | default(false)
