@@ -1,0 +1,5 @@
+---
+- name: Reality E2E | Ensure util-linux (flock) present
+  ansible.builtin.package:
+    name: util-linux
+    state: present

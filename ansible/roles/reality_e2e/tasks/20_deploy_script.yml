@@ -1,0 +1,8 @@
+---
+- name: Reality E2E | Deploy probe script
+  ansible.builtin.template:
+    src: reality_e2e_probe.sh.j2
+    dest: "{{ reality_e2e_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"

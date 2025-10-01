@@ -1,0 +1,18 @@
+---
+- name: Reality E2E | Deploy systemd service (template@)
+  ansible.builtin.template:
+    src: reality-e2e@.service.j2
+    dest: /etc/systemd/system/reality-e2e@.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd daemon
+
+- name: Reality E2E | Deploy systemd timer (template@)
+  ansible.builtin.template:
+    src: reality-e2e@.timer.j2
+    dest: /etc/systemd/system/reality-e2e@.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd daemon

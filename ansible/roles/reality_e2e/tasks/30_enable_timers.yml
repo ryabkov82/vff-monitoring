@@ -1,0 +1,14 @@
+---
+# таймеры для профилей, собранных в render_profiles.yml в reality_e2e_nodes_eff
+- name: Reality E2E | Enable & start timers for effective profiles
+  ansible.builtin.systemd:
+    name: "reality-e2e@{{ item.reality.profile_name | default(item.name) }}.timer"
+    enabled: true
+    state: started
+  loop: "{{ reality_e2e_nodes_eff | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - reality_e2e_nodes_eff is defined
+    - (reality_e2e_nodes_eff | length) > 0
+    - (item.reality.e2e_enabled | default(true)) | bool
