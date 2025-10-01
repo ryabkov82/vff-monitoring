@@ -5,12 +5,14 @@ Description=REALITY E2E probe (%i)
 Type=oneshot
 User={{ reality_e2e_user }}
 Group={{ reality_e2e_group }}
+RuntimeDirectory=reality-e2e
+RuntimeDirectoryMode=0770
 Environment=NAME=%i
 Environment=SOCKS_PORT=1081
 Environment=SLEEP_START=2
 # Environment=DEBUG=1
 Environment=TEXTDIR={{ reality_e2e_textfile_dir }}
-Environment=LOCKFILE=/run/reality-e2e.lock
+Environment=LOCKFILE=%t/reality-e2e/global.lock
 
 # на всякий случай увеличим бюджет времени на старт одной пробы
 TimeoutStartSec=6min

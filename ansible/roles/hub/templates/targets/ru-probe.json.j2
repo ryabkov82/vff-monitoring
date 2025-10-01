@@ -1,0 +1,7 @@
+[
+{% set items = ru_probe_targets_eff | default([]) %}
+{% for t in items %}
+  { "targets": ["{{ t.address }}"], "labels": {{ t.labels | to_json }} }{% if not loop.last %},{% endif %}
+{% endfor %}
+
+]

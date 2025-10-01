@@ -51,3 +51,9 @@ certbot_staging: false      # true — для теста
 
 # Поведение заливки дашбордов (rsync удаляет лишние файлы на целевом хосте)
 grafana_dashboards_use_rsync: true
+
+ru_probe_targets:
+  - address: "10.77.0.1:9100"
+    labels:
+      name: "RU-probe (Moscow)"
+      role: "probe"

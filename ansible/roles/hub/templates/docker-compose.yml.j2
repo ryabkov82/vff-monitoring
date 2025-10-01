@@ -9,9 +9,7 @@ services:
       - "--web.listen-address=127.0.0.1:{{ prometheus_port }}"
       - "--web.enable-lifecycle"
     volumes:
-      - "{{ monitoring_root }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
-      - "{{ monitoring_root }}/prometheus/rules:/etc/prometheus/rules:ro"
-      - "{{ monitoring_root }}/prometheus/targets:/etc/prometheus/targets:ro"
+      - "{{ monitoring_root }}/prometheus:/etc/prometheus:ro"
       - "prom_data:/prometheus"
     network_mode: host
     restart: unless-stopped

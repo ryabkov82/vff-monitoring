@@ -62,6 +62,13 @@ scrape_configs:
         replacement: '$1'
         target_label: target_host
 
+  - job_name: "ru-probe"
+    honor_labels: true
+    scrape_interval: 15s
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/ru-probe.json"]
+        refresh_interval: 30s
+
 {% if marzban_exporter_enabled | bool %}
   - job_name: "marzban_exporter"
     scheme: http
