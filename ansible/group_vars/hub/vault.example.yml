@@ -1,0 +1,27 @@
+# === Grafana / админ-пароль (используется при первичном деплое) ===
+grafana_admin_password: ""
+
+# === Marzban exporter (доступ к панели Marzban) ===
+MARZBAN_USERNAME: ""
+MARZBAN_PASSWORD: ""
+
+# === Basic-авторизация на /metrics у marzban-exporter (если включена) ===
+EXPORTER_METRICS_USER: ""
+EXPORTER_METRICS_PASS: ""
+
+# === Nginx basic auth (карта логин -> пароль/хеш) ===
+# Если роль генерирует .htpasswd сама — можно хранить открытые пароли (роль захеширует).
+# Если хотите класть уже хеши bcrypt — используйте формат htpasswd.
+nginx_passwords:
+  admin: ""
+
+# === REALITY E2E: общие параметры для профилей ===
+reality_e2e_shared:
+  uuid: ""        # UUID клиента
+  public_key: ""  # Публичный ключ сервера (Reality)
+  short_id: ""    # short_id
+  sni: ""         # (опционально) SNI; можно оставить пустым или переопределить в профиле
+
+# === Alertmanager → Telegram ===
+am_telegram_bot_token: ""     # токен бота, напр. '123456:ABC-DEF...'
+am_telegram_chat_id: ""       # ID чата/канала (число или строка); лучше хранить как строку

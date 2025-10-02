@@ -1,12 +1,12 @@
 # Памятка по роли `ansible/roles/hub`
 
-Эта роль поднимает и настраивает стек мониторинга на **хабе**: Prometheus, Grafana, Alertmanager и Blackbox Exporter, а также кладёт дашборды и правила.
+Роль поднимает и настраивает **стек мониторинга на хабе**: Prometheus, Grafana, Alertmanager, Blackbox Exporter, а также кладёт дашборды, targets и правила.
 
 ---
 
 ## 1) Структура задач и теги
 
-Последовательность в `tasks/main.yml` (все блоки импортируются статически, теги наследуются):
+Все блоки импортируются статически из `tasks/main.yml` — можно запускать по тегам.
 
 - **setup** — базовая подготовка хоста (директории, пользователи, пакеты).
   ```yaml
@@ -14,13 +14,13 @@
     tags: [setup]
   ```
 
-- **compose** — рендер `docker-compose.yml` и запуск стека (host networking, bind-mount конфигов).
+- **compose** — рендер `docker-compose.yml` и запуск/обновление стека.
   ```yaml
   - import_tasks: compose.yml
     tags: [compose]
   ```
 
-- **grafana** — установка и провижининг Grafana: источники данных, папки, маппинг папок к файловому провайдеру.
+- **grafana** — провижининг Grafana: datasources, folders, файловый провайдер дашбордов.
   ```yaml
   - import_tasks: grafana.yml
     tags: [grafana]
@@ -32,19 +32,19 @@
     tags: [prometheus]
   ```
 
-- **alertmanager** — конфиг и запуск Alertmanager.
+- **alertmanager** — рендер конфигурации Alertmanager и перезапуск при изменениях.
   ```yaml
   - import_tasks: alertmanager.yml
     tags: [alertmanager]
   ```
 
-- **blackbox** — конфиг Blackbox Exporter и таргеты.
+- **blackbox** — конфигурация Blackbox Exporter и таргетов.
   ```yaml
   - import_tasks: blackbox.yml
     tags: [blackbox]
   ```
 
-- **health** — предварительная отправка хэндлеров (перечтение конфигов), затем проверки /ready и базовые curl-запросы.
+- **health** — `meta: flush_handlers` + проверки `/ready`/`/health` curl‑запросами.
   ```yaml
   - meta: flush_handlers
     tags: [health]
@@ -52,212 +52,250 @@
     tags: [health]
   ```
 
-- **grafana_token** — получение/обновление admin API token (по возможности).
+- **grafana_token** — получение/обновление admin API token (по флагу).
   ```yaml
   - import_tasks: grafana_token.yml
     tags: [grafana_token]
   ```
 
-- **grafana_export** — экспорт дашбордов из Grafana по UID (именуем файлы **по UID**, а не по title).
+- **grafana_export** — экспорт дашбордов по UID (файлы именуются **по UID**).
   ```yaml
   - import_tasks: grafana_export.yml
     tags: [grafana_export]
   ```
 
-> ⚙️ Хэндлеры: перезапуски/релоды Prometheus, Grafana, Alertmanager, а также `/-/reload` у Prometheus.
+> Хэндлеры: рестарт/релод Prometheus, Grafana, Alertmanager; у Prometheus также `/-/reload`.
 
 ---
 
-## 2) Куда кладутся файлы на хосте (по умолчанию)
+## 2) Куда кладутся файлы на хосте
 
-Корень стека: `{{ monitoring_root }}` (обычно `/opt/vff-monitoring`). Внутри:
+Корень стека: `{{ monitoring_root }}` (по умолчанию `/opt/vff-monitoring`).
+
 - **Prometheus**
   - `prometheus/prometheus.yml` — основной конфиг
-  - `prometheus/rules/*.yml` — rules/alerts
-  - `prometheus/targets/*.json` — file_sd таргеты (nodes, bb-icmp, bb-tcp443, **ru-probe** и т.д.)
+  - `prometheus/rules/*.yml` — recording/alerting rules
+  - `prometheus/targets/*.json` — file_sd targets (nodes, bb-icmp, bb-tcp443, ru-probe и т.д.)
+
 - **Grafana**
-  - `grafana/dashboards/**` — дашборды (файловый провайдер)
-  - именование файлов: **строго по UID** (пример: `grafana/dashboards/Reality/reality-table.json`)
-- **docker-compose.yml** — в корне `{{ monitoring_root }}`
+  - `grafana/dashboards/**` — JSON дашбордов для файлового провайдера
+  - ⚠️ **Именование файлов = UID**: `VPN/wireguard-health.json`, `Marzban/marzban-online-nodes.json`, `Reality/reality-table.json`
 
-Prometheus работает в container mode с `network_mode: host`, конфиги подмонтированы read-only.
+- **Alertmanager**
+  - `alertmanager/alertmanager.yml` — конфиг (монтируется каталогом)
+
+- **Docker Compose**
+  - `docker-compose.yml` — общий файл стека (контейнеры в `network_mode: host`, конфиги bind‑mount read‑only)
 
 ---
 
-## 3) Prometheus: ключевые моменты
+## 3) Prometheus (основное)
 
-- **Новые джобы** добавляем в шаблон: `ansible/roles/hub/templates/prometheus.yml.j2`, затем Ansible рендерит на хост.
-- **file_sd targets** генерируются из шаблонов в `templates/targets/*.json.j2` и кладутся в
-  `{{ monitoring_root }}/prometheus/targets/*.json`.
-- Примеры джоб:
-  - `job_name: "prometheus"` — self-scrape `127.0.0.1:{{ prometheus_port }}`
-  - `job_name: "node"` — `file_sd` → `/etc/prometheus/targets/nodes.json`
-  - `job_name: "blackbox_icmp"`, `job_name: "blackbox_tcp443"` — `file_sd` и relabel для `__param_target`
-  - **`job_name: "ru-probe"`** — `file_sd` → `/etc/prometheus/targets/ru-probe.json`, `scrape_interval: 15s`
+- Новые джобы правим в `templates/prometheus.yml.j2`, targets — в `templates/targets/*.json.j2`.
+- file_sd обновляется автоматически по `refresh_interval` (см. переменные ниже).
+- Reload без рестарта:
+  ```bash
+  curl -fsS -X POST http://127.0.0.1:{{ prometheus_port }}/-/reload
+  ```
+- Проверки:
+  ```bash
+  curl -s 'http://127.0.0.1:{{ prometheus_port }}/api/v1/targets?state=any' | jq .data.activeTargets
+  ```
 
-> После правок: либо отправляем POST на `http://127.0.0.1:{{ prometheus_port }}/-/reload`, либо рестартуем контейнер Prometheus.
+---
 
-**Проверка в контейнере:**
-```bash
-# Убедиться, что конфиг внутри контейнера обновился:
-docker compose -f /opt/vff-monitoring/docker-compose.yml exec -T prometheus sh -lc   'grep -n "job_name: ru-probe" /etc/prometheus/prometheus.yml || echo "no ru-probe"'
+## 4) Grafana (дашборды: импорт/экспорт)
 
-# Статус активных таргетов:
-curl -s 'http://127.0.0.1:{{ prometheus_port }}/api/v1/targets?state=any' | jq .data.activeTargets
+- Провижининг из `grafana/dashboards/**` (файловый провайдер).
+- При экспорте Ansible вытягивает по UID, нормализует через `jq`, сохраняет как `UID.json` в папку по `meta.folderTitle`.
+- Типовые проблемы:
+  - `same UID is used more than once` / `title is not unique` → удалить дубликаты по title, оставить только `UID.json`.
+  - `Not saving new dashboard due to restricted database access` → следствие дублей, также лечится их удалением.
+- Горячая подгрузка: достаточно обновить файл + перезапустить Grafana (иногда хватает авто‑сканирования).
+  ```bash
+  docker compose -f {{ monitoring_root }}/docker-compose.yml restart grafana
+  ```
+
+---
+
+## 5) Alertmanager (Telegram)
+
+- Конфиг генерируется шаблоном `templates/alerts.yml.j2` в `{{ monitoring_root }}/alertmanager/alertmanager.yml`.
+- Схема по умолчанию — один receiver Telegram или «blackhole», с разумными group_* интервалами.
+- Для работы Telegram определите секреты в `group_vars/hub/vault.yml` (см. ниже).
+
+Пример содержания генерируемого файла (по умолчанию):
+```yaml
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: tg
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+
+receivers:
+- name: tg
+  telegram_configs:
+  - bot_token: "<token>"
+    chat_id: 123456
+    api_url: "https://api.telegram.org"
+    parse_mode: ""
+    send_resolved: true
+- name: blackhole
 ```
 
----
-
-## 4) Grafana: дашборды, экспорт/импорт
-
-- **Файловый провайдер** читает JSON из `grafana/dashboards/**`.
-- Именование файлов — **по UID**, а не по title (избегаем дубликатов и «кривых» имён от экспорта).
-  - Примеры: `VPN/wireguard-health.json`, `VPN/vpn-network-utilization.json`,
-    `Marzban/marzban-online-nodes.json`, `Reality/reality-table.json`.
-- Экспорт из Grafana (Ansible): задачи в `grafana_export.yml`/`grafana_export_one.yml`:
-  - вытягиваем по UID через API;
-  - нормализуем через `jq` (datasource Prometheus → `"Prometheus"`, `del(.id)`, берём `.dashboard`);
-  - сохраняем в файл **UID.json** в папке по `meta.folderTitle`.
-
-**Типичные проблемы и решения:**
-- `the same UID is used more than once` / `dashboard title is not unique` → удаляем дубликаты файлов по title, оставляем только `UID.json`.
-- `Not saving new dashboard due to restricted database access` при провижининге — это предупреждение при наличии дублей; устраняем дубли.
-
-**Перезагрузка Grafana:**
-```bash
-docker compose -f /opt/vff-monitoring/docker-compose.yml restart grafana
-```
+> Мы **монтируем каталог** `{{ monitoring_root }}/alertmanager:/etc/alertmanager:ro` (а не единичный файл), чтобы Alertmanager гарантированно видел свежий `alertmanager.yml` после обновления Ansible.
 
 ---
 
-## 5) Blackbox Exporter
+## 6) Blackbox Exporter
 
-- Конфигурируется в `blackbox.yml` (шаблоны и задачи роли).
-- Таргеты приходят через `file_sd` (`bb-icmp.json`, `bb-tcp443.json`).
-- Relabel-конвейер:
-  - `__address__` из file_sd → `__param_target` (то, что пингуем)
-  - `instance` = `__param_target`
-  - `__address__` заменяем на `127.0.0.1:{{ blackbox_port }}` (сам blackbox_exporter)
-  - Доп. метки (e.g. `target_host` без порта) — для удобства переменных в Grafana.
+- Конфиг `blackbox.yml` + `file_sd` таргеты `bb-icmp.json`, `bb-tcp443.json`.
+- Relabel: `__param_target` ← `__address__` из file_sd, `instance` = target, `__address__` → адрес самого blackbox (127.0.0.1:{{ blackbox_port }}).
 
 ---
 
-## 6) Частые операции
+## 7) Частые операции
 
-### Развёртывание только Prometheus+targets
 ```bash
-ansible-playbook -i ansible/hosts.ini ansible/site.yml --limit hub --tags prometheus
-```
+# Полный стек Grafana (provisioning + dashboards)
+make grafana
 
-### Загрузка/обновление дашбордов
-```bash
-# Полностью синхронизировать папки dashboards/** (filetree провайдер)
+# Синхронизировать дашборды без рестартов
 make grafana-dashboards
-# или
-ansible-playbook -i ansible/hosts.ini ansible/site.yml --limit hub --tags grafana_dashboards
-docker compose -f /opt/vff-monitoring/docker-compose.yml restart grafana
+
+# Экспорт дашбордов по UID
+make grafana-pull   ANSIBLE_FLAGS='--tags grafana_export -e grafana_export_uids=["wireguard-health","reality-table"]'
+
+# Только правила Prometheus (recording/alerts) + health
+make prom-rules
+
+# Reload Prometheus без рестарта
+make prom-reload
 ```
 
-### Экспорт конкретного дашборда по UID (в файл UID.json)
+---
+
+## 8) Vault: секреты и их использование
+
+Файл: `ansible/group_vars/hub/vault.yml` — **зашифрованный** через Ansible Vault.
+
+### Минимальный пример содержимого
+```yaml
+grafana_admin_password: ""
+
+# Basic‑auth для внутренних экспортеров (если включено в шаблонах)
+EXPORTER_METRICS_USER: "metrics"
+EXPORTER_METRICS_PASS: ""
+
+# Telegram Alertmanager
+am_telegram_bot_token: ""
+am_telegram_chat_id: 123456789
+
+# Nginx basic‑auth для внешних сайтов (прокси)
+nginx_passwords:
+  admin: ""
+
+# Marzban exporter (если используется)
+MARZBAN_USERNAME: ""
+MARZBAN_PASSWORD: ""
+
+# Общие параметры для reality_e2e профилей (если нужны по умолчанию)
+reality_e2e_shared:
+  uuid: ""
+  public_key: ""
+  short_id: ""
+  sni: ""        # опционально
+```
+
+### Команды Ansible Vault
 ```bash
-ansible-playbook -i ansible/hosts.ini ansible/site.yml --limit hub   --tags grafana_export --extra-vars 'dash_uid=<UID>'
+# Отредактировать (рекомендуемо):
+ansible-vault edit ansible/group_vars/hub/vault.yml
+
+# Создать с нуля:
+ansible-vault create ansible/group_vars/hub/vault.yml
+
+# Зашифровать уже существующий открытый файл:
+ansible-vault encrypt ansible/group_vars/hub/vault.yml
+
+# Расшифровать (временная операция, обычно не требуется):
+ansible-vault decrypt ansible/group_vars/hub/vault.yml
 ```
 
-### Reload Prometheus без рестарта контейнера
-```bash
-curl -s -X POST http://127.0.0.1:{{ prometheus_port }}/-/reload
-```
+> При запуске playbooks добавьте `--ask-vault-pass` (или используйте vault‑id). Пример:
+> ```bash
+> make hub ANSIBLE_FLAGS=--ask-vault-pass
+> ```
 
-### Проверка конфигов promtool
-```bash
-docker run --rm -v /opt/vff-monitoring/prometheus:/etc/prometheus:ro   --entrypoint /bin/promtool prom/prometheus:v2.55.1   check config /etc/prometheus/prometheus.yml
-```
-
----
-
-## 7) Тонкости и грабли
-
-- После обновления шаблонов Prometheus обязательно проверить, что **внутри контейнера** конфиг обновился (bind mount есть, но контейнер мог не перечитать — помогает `/-/reload` или рестарт).
-- Для **file_sd** новые файлы в `targets/*.json` подхватываются Prometheus автоматически (watcher), но с интервалом `refresh_interval`. В шаблоне можно уменьшить `refresh_interval` при необходимости.
-- В Grafana избегаем дублирующих UID и титулов в одной папке. Сохраняем **только файлы по UID**.
-- Если Grafana пишет про «restricted database access» — это из‑за конфликтов провижининга (обычно дубли).
+### Как шаблоны используют секреты
+- Grafana admin пароль → `docker-compose.yml.j2` (переменные окружения контейнера).
+- Alertmanager Telegram → `alerts.yml.j2`.
+- Nginx basic‑auth → генерация `.htpasswd` из `nginx_passwords` (через роль `nginx`).
+- Marzban exporter → переменные окружения контейнера (если включён).
 
 ---
 
-## 8) Где править
+## 9) Переменные роли
 
-- Prometheus:
-  - `ansible/roles/hub/templates/prometheus.yml.j2`
-  - `ansible/roles/hub/templates/rules/*.yml.j2`
-  - `ansible/roles/hub/templates/targets/*.json.j2`
-  - задачи: `ansible/roles/hub/tasks/prometheus.yml`
-
-- Grafana:
-  - дашборды: `grafana/dashboards/**` (именование — по UID)
-  - экспорт: `ansible/roles/hub/tasks/grafana_export*.yml`
-  - провижининг: `ansible/roles/hub/tasks/grafana.yml`
-
-- Docker Compose:
-  - шаблон: `ansible/roles/hub/templates/docker-compose.yml.j2`
-  - задачи: `ansible/roles/hub/tasks/compose.yml`
-
----
-
-## 9) Мини‑чеклист после изменений
-
-1. `make grafana-dashboards` → перезапустить Grafana.
-2. Рендер `prometheus.yml` и targets → `/-/reload` Prometheus.
-3. `curl /api/v1/status/config` и `/api/v1/targets?state=any` — убедиться, что джобы и таргеты видны.
-4. Проверить ключевые метрики и переменные Grafana (datasource `"Prometheus"`).
-
-
-
----
-
-## Переменные роли
-
+### Основные
 | Переменная | Назначение | По умолчанию |
 |---|---|---|
 | `monitoring_root` | Корень стека мониторинга на хосте | `/opt/vff-monitoring` |
-| `prometheus_port` | Порт HTTP Prometheus (в контейнере и для health) | `9090` |
-| `alertmanager_port` | Порт HTTP Alertmanager | `9093` |
-| `blackbox_port` | Порт HTTP Blackbox Exporter | `9115` |
-| `prometheus_image` | Образ контейнера Prometheus | `prom/prometheus:v2.55.1` |
-| `external_url_prometheus` | Опциональный `--web.external-url` Prometheus | `""` (не задан) |
-| `grafana_image` | Образ контейнера Grafana | `grafana/grafana:10.4.5` |
-| `grafana_port` | Порт Grafana (если используется; при host network) | `3000` |
-| `grafana_api_url` | Базовый URL API Grafana для экспорта | `http://127.0.0.1:{{ grafana_port }}` |
-| `grafana_admin_token` | API Token админа Grafana (если задан — используется вместо basic auth) | `""` |
-| `grafana_admin_user` | Логин админа Grafana (если токен не задан) | `admin` |
-| `grafana_admin_password` | Пароль админа Grafana (если токен не задан) | `admin` |
-| `grafana_dash_dir` | Путь к каталогу с дашбордами на **хосте** | `{{ monitoring_root }}/grafana/dashboards` |
-| `grafana_provider_name` | Имя файлового провайдера (для читаемости логов) | `filetree` |
-| `prometheus_rules_refresh_interval` | Интервал пересканирования rules (фактически задаётся прометеем; в роли — просто файлы) | `5m` (внутр. поведение Prometheus) |
-| `file_sd_refresh_interval` | Интервал пересканирования `targets/*.json` | `5m` (если не переопределён в шаблоне) |
-| `marzban_exporter_enabled` | Включить scrape Marzban exporter | `false` |
-| `marzban_exporter_bind_port` | Порт Marzban exporter (если включён) | `9205` |
-| `marzban_exporter_protected` | Включить basic auth к exporter | `true/false` (как в инвентаре) |
-| `EXPORTER_METRICS_USER` | Basic auth user для защищённых экспортеров | `metrics` |
-| `EXPORTER_METRICS_PASS` | Basic auth password для защищённых экспортеров | `""` |
-| `ru_probe_enabled` | Включить job `ru-probe` | `true` |
-| `ru_probe_targets` | Список таргетов RU‑зондов для генерации `targets/ru-probe.json` (см. ниже) | `[]` |
+| `prometheus_image` | Образ Prometheus | `prom/prometheus:v2.55.1` |
+| `grafana_image` | Образ Grafana | `grafana/grafana:10.4.5` |
+| `alertmanager_image` | Образ Alertmanager | `prom/alertmanager:v0.27.0` |
+| `blackbox_image` | Образ Blackbox Exporter | `prom/blackbox-exporter:v0.25.0` |
+| `prometheus_port` | Порт Prometheus | `9090` |
+| `grafana_port` | Порт Grafana | `3000` |
+| `alertmanager_port` | Порт Alertmanager | `9093` |
+| `blackbox_port` | Порт Blackbox Exporter | `9115` |
+| `external_url_prometheus` | `--web.external-url` Prometheus | `""` |
+| `external_url_grafana` | Базовый внеш. URL Grafana (для reverse‑proxy) | `""` |
+| `external_url_alerts` | `--web.external-url` Alertmanager | `""` |
+| `file_sd_refresh_interval` | Интервал ресканирования targets | `5m` |
 
-### Формат `ru_probe_targets`
-Список словарей; каждый элемент попадает в `targets/ru-probe.json` (file_sd). Пример:
-```yaml
-ru_probe_targets:
-  - address: "10.77.0.1:9100"   # обязательное поле — адрес node_exporter
-    labels:
-      name: "RU-probe (Moscow)"
-      role: "probe"
-  - address: "10.88.0.2:9100"
-    labels:
-      name: "RU-probe (SPB)"
-      role: "probe"
-```
-> Если роль RU‑зонда совмещена с хабом, укажите локальный адрес/порт `node_exporter` этого же сервера.
+### Grafana / экспорт
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `grafana_dash_dir` | Каталог дашбордов на хосте | `{{ monitoring_root }}/grafana/dashboards` |
+| `grafana_provider_name` | Имя файлового провайдера | `filetree` |
+| `grafana_api_url` | URL API Grafana (для экспорта) | `http://127.0.0.1:{{ grafana_port }}` |
+| `grafana_admin_token` | API токен админа (если указан — предпочтительнее basic) | `""` |
+| `grafana_admin_user` | Логин админа | `admin` |
+| `grafana_admin_password` | Пароль админа (**секрет, хранить в vault**) | `admin` |
 
-### Примечания
-- В дашбордах **datasource** должен быть `"Prometheus"` (строка), не объект с `{type, uid}` — это нормализуется в экспорте.
-- Имена файлов дашбордов — **по UID** (например, `Reality/reality-table.json`). Это предотвращает дубли при реэкспорте.
-- `docker-compose.yml` генерируется из шаблона; контейнеры работают с `network_mode: host`, конфиги подмонтированы read‑only.
+### Alertmanager / Telegram
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `am_global_resolve_timeout` | `global.resolve_timeout` | `5m` |
+| `am_route_group_by` | Список label для группировки | `['alertname','instance']` |
+| `am_route_group_wait` | Время ожидания первой нотификации | `30s` |
+| `am_route_group_interval` | Интервал между группами | `5m` |
+| `am_route_repeat_interval` | Период повтора | `2h` |
+| `am_telegram_bot_token` | Bot token (**vault**) | `""` |
+| `am_telegram_chat_id` | Chat ID (**vault**) | `null` |
+| `am_telegram_api_url` | URL API | `https://api.telegram.org` |
+| `am_telegram_parse_mode` | Режим форматирования | `""` |
+| `am_telegram_send_resolved` | Отправлять восстановление | `true` |
+
+### Экспортеры/прокси
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `MARZBAN_USERNAME` | Логин к панели Marzban (**vault**) | `""` |
+| `MARZBAN_PASSWORD` | Пароль к панели Marzban (**vault**) | `""` |
+| `EXPORTER_METRICS_USER` | Basic‑auth user для экспортёров (**vault**) | `metrics` |
+| `EXPORTER_METRICS_PASS` | Basic‑auth pass (**vault**) | `""` |
+| `nginx_passwords` | Словарь пользователей для `.htpasswd` (**vault**) | `{admin: ""}` |
+
+---
+
+## 10) Практические советы
+
+- Если Grafana ведёт себя странно (401 после логина) — **очистите куки/кеш сайта** проблемного браузера. Через curl всё ок — значит виноваты куки.
+- При проблемах с провижинингом дашбордов — проверьте **дублирующие UID/тайтлы** в каталоге dashboards.
+- Конфиги монтируются read‑only; при обновлении файлов **перезапустите соответствующий контейнер** (Grafana/Alertmanager) или отправьте `/-/reload` в Prometheus.
+- Держите все секреты только в `vault.yml`; не коммитьте открытые значения в репозиторий.

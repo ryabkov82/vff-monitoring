@@ -131,7 +131,7 @@ endif
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_hub --limit hub $(ANSIBLE_FLAGS)
 
 	@echo ">> [4/4] Apply hub bundle (render targets/rules, etc.)"
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags hub --limit hub $(ANSIBLE_FLAGS)
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags "hub,ru_probe,reality_e2e" --limit hub $(ANSIBLE_FLAGS)
 
 	@echo "✓ Done: node $(HOST) onboarded (WG + agents installed, hub updated)"
 
