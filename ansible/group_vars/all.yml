@@ -27,19 +27,28 @@ vpn_nodes:
     wg_ip: "10.77.0.2"
     role: "vpn"
     uplink_device: "ens3"         # опц., по умолчанию ens3
-    uplink_speed_bps: 10000000000  # 10 Gbit/s    
+    uplink_speed_bps: 10000000000  # 10 Gbit/s
+    reality:
+      e2e_enabled: true
+      sni: "segment-ams-01.digitalstreamers.xyz"    
   - name: "nl-ams-2"               
     instance: "10.77.0.3:9100"
     wg_ip: "10.77.0.3"
     role: "vpn"
     uplink_device: "ens3"
     uplink_speed_bps: 10000000000
+    reality:
+      e2e_enabled: true
+      sni: "segment-ams-02.digitalstreamers.xyz"
   - name: "nl-ams-3"
     instance: "10.77.0.4:9100"
     wg_ip: "10.77.0.4"
     role: "vpn"
-    uplink_device: "ens3"
+    uplink_device: "enp3s0"
     uplink_speed_bps: 10000000000
+    reality:
+      e2e_enabled: true
+      sni: "segment-ams-03.digitalstreamers.xyz"    
   # - name: "DE-1"
   #   instance: "10.66.0.3:9100"
   #   role: "vpn"

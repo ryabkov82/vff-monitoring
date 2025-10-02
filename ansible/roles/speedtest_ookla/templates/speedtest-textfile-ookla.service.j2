@@ -7,6 +7,8 @@ After=network-online.target
 Type=oneshot
 User={{ node_speedtest_user }}
 Group={{ node_speedtest_group }}
+Environment=HOME={{ node_speedtest_home }}
+Environment=XDG_CONFIG_HOME={{ node_speedtest_xdg_config_home }}
 UMask=0002
 ExecStart=/usr/local/bin/speedtest_textfile_ookla.sh
 Nice=10
