@@ -4,8 +4,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=node_exporter
-Group=node_exporter
+User={{ node_exporter_user }}
+Group={{ node_exporter_group }}
+UMask=0002
 ExecStart={{ node_exporter_bin_dir }}/node_exporter \
   --web.listen-address=%i \
   --collector.textfile.directory={{ node_exporter_textfile_dir }}

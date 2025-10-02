@@ -19,7 +19,7 @@
 ## Архитектура
 
 <details>
-<summary><strong>Mermaid-схема (для редактирования)</strong></summary>
+<summary><strong>Mermaid-схема</strong></summary>
 
 ```mermaid
 flowchart LR

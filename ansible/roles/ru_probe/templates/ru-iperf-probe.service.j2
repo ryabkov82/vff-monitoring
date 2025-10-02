@@ -4,8 +4,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User: "{{ node_exporter_user | default('node_exporter') }}"
+Group: "{{ node_exporter_group | default('node_exporter') }}"
+UMask=0002
 EnvironmentFile=-/etc/default/ru-iperf-probe
 ExecStart=/usr/local/bin/ru_iperf_probe.sh
-User=root
-Group=root
 Nice=10

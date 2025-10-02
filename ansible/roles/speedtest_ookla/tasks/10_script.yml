@@ -1,0 +1,8 @@
+---
+- name: Speedtest | Deploy textfile script
+  ansible.builtin.template:
+    src: speedtest_textfile_ookla.sh.j2
+    dest: /usr/local/bin/speedtest_textfile_ookla.sh
+    owner: root
+    group: "{{ node_speedtest_group }}"
+    mode: "0755"

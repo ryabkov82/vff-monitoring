@@ -1,0 +1,67 @@
+---
+# Debian/Ubuntu
+- name: Speedtest | Repo install (Debian/Ubuntu)
+  when:
+    - ansible_os_family == "Debian"
+  block:
+    - name: Ensure prereqs (repo)
+      ansible.builtin.apt:
+        name: [ca-certificates, gnupg2, curl]
+        state: present
+        update_cache: true
+
+    - name: Add Ookla APT repo via script (non-fatal)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL https://install.speedtest.net/app/cli/install.deb.sh | bash
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/sources.list.d/ookla_speedtest-cli.list
+      register: _ookla_repo_add_deb
+      failed_when: false
+      changed_when: _ookla_repo_add_deb.rc == 0
+
+    - name: Install package speedtest (Debian/Ubuntu) (non-fatal)
+      ansible.builtin.apt:
+        name: speedtest
+        state: present
+        update_cache: true
+      register: _ookla_pkg_deb
+      failed_when: false
+
+# RHEL family
+- name: Speedtest | Repo install (RHEL)
+  when:
+    - ansible_os_family == "RedHat"
+  block:
+    - name: Ensure prereqs (repo)
+      ansible.builtin.yum:
+        name: curl
+        state: present
+
+    - name: Add Ookla YUM repo via script (non-fatal)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | bash
+      args:
+        executable: /bin/bash
+        creates: /etc/yum.repos.d/ookla_speedtest-cli.repo
+      register: _ookla_repo_add_rpm
+      failed_when: false
+      changed_when: _ookla_repo_add_rpm.rc == 0
+
+    - name: Install package speedtest (RHEL) (non-fatal)
+      ansible.builtin.yum:
+        name: speedtest
+        state: present
+      register: _ookla_pkg_rpm
+      failed_when: false
+
+- name: Speedtest | Decide if repo install succeeded
+  ansible.builtin.set_fact:
+    _speedtest_repo_ok: >-
+      {{
+        (_ookla_pkg_deb is defined and (_ookla_pkg_deb.rc | default(1)) == 0)
+        or
+        (_ookla_pkg_rpm is defined and (_ookla_pkg_rpm.rc | default(1)) == 0)
+      }}

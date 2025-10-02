@@ -28,7 +28,7 @@ services:
       - "--web.external-url={{ external_url_alerts }}"
       - "--web.listen-address=127.0.0.1:{{ alertmanager_port }}"
     volumes:
-      - "{{ monitoring_root }}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
+      - "{{ monitoring_root }}/alertmanager:/etc/alertmanager:ro"
       - "am_data:/alertmanager"
     network_mode: host
     restart: unless-stopped

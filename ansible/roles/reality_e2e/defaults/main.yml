@@ -1,8 +1,9 @@
 reality_e2e_enabled: true
-reality_e2e_user: node_exporter
-reality_e2e_group: node_exporter
 
-reality_e2e_textfile_dir: /var/lib/node_exporter/textfile
+reality_e2e_user: "{{ node_exporter_user | default('node_exporter') }}"
+reality_e2e_group: "{{ node_exporter_group | default('node_exporter') }}"
+reality_e2e_textfile_dir: "{{ node_exporter_textfile_dir | default('/var/lib/node_exporter/textfile') }}"
+
 reality_e2e_bin_sing_box: /usr/local/bin/sing-box   # путь к бинарю sing-box
 reality_e2e_install_sing_box: false                 # если хочешь — добавим установку из tgz позже
 

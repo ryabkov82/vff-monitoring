@@ -33,11 +33,14 @@ node_reality_port: 443
 node_reality_node_name: "{{ inventory_hostname }}"
 
 # systemd
-node_reality_user: root
-node_reality_group: root
+node_reality_user: "{{ node_exporter_user | default('node_exporter') }}"
+node_reality_group: "{{ node_exporter_group | default('node_exporter') }}"
 node_reality_timeout: 60
 node_reality_stdout: journal
 node_reality_stderr: journal
 node_reality_onboot: 30s
 node_reality_interval: 60s
 node_reality_accuracy: 10s
+
+node_wg_user: "{{ node_exporter_user | default('node_exporter') }}"
+node_wg_group: "{{ node_exporter_group | default('node_exporter') }}"

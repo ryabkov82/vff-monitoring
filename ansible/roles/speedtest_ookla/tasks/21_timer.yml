@@ -1,0 +1,7 @@
+---
+- name: Speedtest | Enable+start timer (if enabled)
+  ansible.builtin.systemd:
+    name: speedtest-textfile-ookla.timer
+    enabled: true
+    state: started
+  when: node_speedtest_timer_enabled | bool

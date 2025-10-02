@@ -1,17 +1,10 @@
 ---
-- name: Reality | Ensure textfile dir exists
-  ansible.builtin.file:
-    path: "{{ node_reality_textfile_dir }}"
-    state: directory
-    mode: "0755"
-  when: node_reality_enabled | bool
-
 - name: Reality | Install script /usr/local/bin/reality_svc_health.sh
   ansible.builtin.template:
     src: reality_svc_health.sh.j2
     dest: /usr/local/bin/reality_svc_health.sh
     owner: root
-    group: root
+    group: "{{ node_reality_group }}"
     mode: "0755"
   when: node_reality_enabled | bool
   notify: Reload systemd

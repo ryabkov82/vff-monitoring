@@ -5,7 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User={{ node_speedtest_user | default('root') }}
+User={{ node_speedtest_user }}
+Group={{ node_speedtest_group }}
+UMask=0002
 ExecStart=/usr/local/bin/speedtest_textfile_ookla.sh
 Nice=10
 StandardOutput=journal
