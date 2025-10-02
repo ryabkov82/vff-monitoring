@@ -2,10 +2,15 @@
 Description=REALITY E2E probe timer (%i)
 
 [Timer]
-OnBootSec=30s
-OnUnitActiveSec=300s
-RandomizedDelaySec=60s
-AccuracySec=15s
+{% if reality_e2e_timer_calendar | default('') | trim == '' %}
+OnBootSec={{ reality_e2e_timer_onboot | default('30s') }}
+OnUnitActiveSec={{ reality_e2e_timer_interval | default('5min') }}
+{% else %}
+OnBootSec={{ reality_e2e_timer_onboot | default('30s') }}
+OnCalendar={{ reality_e2e_timer_calendar }}
+{% endif %}
+RandomizedDelaySec={{ reality_e2e_timer_jitter | default('60s') }}
+AccuracySec={{ reality_e2e_timer_accuracy | default('15s') }}
 Persistent=true
 Unit=reality-e2e@%i.service
 

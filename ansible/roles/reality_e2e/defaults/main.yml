@@ -13,6 +13,12 @@ reality_e2e_script_path: /usr/local/bin/reality_e2e_probe.sh
 # базовый корень всего мониторинга
 monitoring_root: "/opt/vff-monitoring"
 
+reality_e2e_timer_onboot: "30s"
+reality_e2e_timer_interval: "5min"           # используется, если calendar не задан
+# reality_e2e_timer_calendar: "*:0/5"        # если задать — будет OnCalendar вместо OnActiveSec
+reality_e2e_timer_jitter: "60s"
+reality_e2e_timer_accuracy: "15s"
+
 # каталог для JSON/ENV профилей e2e (строится от monitoring_root)
 reality_e2e_cfg_dir: "{{ monitoring_root }}/ru-probe/reality"
 

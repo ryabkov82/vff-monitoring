@@ -3,3 +3,21 @@
   ansible.builtin.package:
     name: [jq, curl]
     state: present
+
+- name: Speedtest | Ensure HOME for node_speedtest_user
+  ansible.builtin.file:
+    path: "{{ node_speedtest_home }}"
+    state: directory
+    owner: "{{ node_speedtest_user }}"
+    group: "{{ node_speedtest_group }}"
+    mode: "02775"   # setgid + групповая запись
+  when: node_speedtest_enabled | bool
+
+- name: Speedtest | Ensure XDG_CONFIG_HOME/ookla exists
+  ansible.builtin.file:
+    path: "{{ node_speedtest_xdg_config_home }}/ookla"
+    state: directory
+    owner: "{{ node_speedtest_user }}"
+    group: "{{ node_speedtest_group }}"
+    mode: "02775"
+  when: node_speedtest_enabled | bool

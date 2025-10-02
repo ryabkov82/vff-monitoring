@@ -6,7 +6,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Reload systemd daemon
+  register: _svc_tpl
 
 - name: Reality E2E | Deploy systemd timer (template@)
   ansible.builtin.template:
@@ -15,4 +15,13 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Reload systemd daemon
+  register: _timer_tpl
+
+- name: Reality E2E | Daemon-reload if unit files changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: _svc_tpl.changed or _timer_tpl.changed
+
+- name: Reality E2E | Flag unit templates changed
+  ansible.builtin.set_fact:
+    reality_e2e_units_changed: "{{ (_svc_tpl.changed or _timer_tpl.changed) | bool }}"
