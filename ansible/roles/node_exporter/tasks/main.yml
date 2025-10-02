@@ -29,9 +29,9 @@
       ansible.builtin.file:
         path: "{{ node_exporter_textfile_dir }}"
         state: directory
-        owner: node_exporter
-        group: node_exporter
-        mode: "0755"
+        owner: "{{ node_exporter_user | default('node_exporter') }}"
+        group: "{{ node_exporter_group | default('node_exporter') }}"
+        mode: "02775"   # setgid + групповая запись
 
     # 0) Есть ли бинарь вообще?
     - name: Check node_exporter binary presence

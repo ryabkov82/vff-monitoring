@@ -1,6 +1,9 @@
 # куда node_exporter читает textfile-метрики
 node_exporter_textfile_dir: /var/lib/node_exporter/textfile
 
+ru_probe_user: "{{ node_exporter_user | default('node_exporter') }}"
+ru_probe_group: "{{ node_exporter_group | default('node_exporter') }}"
+
 # iperf3 клиентские настройки
 ru_probe_port_default: 5201
 ru_probe_duration: 10         # секунд

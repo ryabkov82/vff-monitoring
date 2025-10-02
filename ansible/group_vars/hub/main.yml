@@ -52,6 +52,18 @@ certbot_staging: false      # true — для теста
 # Поведение заливки дашбордов (rsync удаляет лишние файлы на целевом хосте)
 grafana_dashboards_use_rsync: true
 
+# Alertmanager -> Telegram
+am_telegram_api_url: "https://api.telegram.org"
+am_telegram_parse_mode: ""                # можно "MarkdownV2" или "HTML"
+am_telegram_send_resolved: true
+
+am_global_resolve_timeout: "5m"
+
+am_route_group_by: ['alertname','instance']
+am_route_group_wait: "30s"
+am_route_group_interval: "5m"
+am_route_repeat_interval: "5h"
+
 ru_probe_targets:
   - address: "10.77.0.1:9100"
     labels:

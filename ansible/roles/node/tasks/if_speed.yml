@@ -23,14 +23,6 @@
         | default(node_uplink_default_speed_bps)
       }}
 
-- name: IfSpeed | Ensure textfile dir exists
-  ansible.builtin.file:
-    path: "{{ node_exporter_textfile_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
 - name: IfSpeed | Publish if_speed_bps via textfile
   when: node_if_speed_textfile_enabled | bool
   ansible.builtin.template:

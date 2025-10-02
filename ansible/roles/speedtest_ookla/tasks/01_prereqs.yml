@@ -1,0 +1,5 @@
+---
+- name: Speedtest | Install deps (jq, curl)
+  ansible.builtin.package:
+    name: [jq, curl]
+    state: present

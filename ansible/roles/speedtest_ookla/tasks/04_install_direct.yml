@@ -1,0 +1,58 @@
+---
+- name: Speedtest | Map arch for direct download
+  ansible.builtin.set_fact:
+    _speedtest_arch: >-
+      {{
+        {
+          'x86_64': 'x86_64',
+          'amd64' : 'x86_64',
+          'aarch64': 'aarch64',
+          'arm64'  : 'aarch64',
+          'armv7l' : 'armhf',
+          'armv6l' : 'armhf',
+          'i386'   : 'i386',
+          'i686'   : 'i386'
+        }[ansible_architecture | lower] | default('x86_64')
+      }}
+
+- name: Speedtest | Assert direct url provided
+  ansible.builtin.assert:
+    that:
+      - node_speedtest_direct_url is defined
+      - (node_speedtest_direct_url | length) > 0
+    fail_msg: >-
+      Repo install failed/unsupported. Define:
+        node_speedtest_version: "1.2.X"
+        node_speedtest_direct_url: "https://install.speedtest.net/app/cli/ookla-speedtest-{{ node_speedtest_version }}-linux-{{ _speedtest_arch }}.tgz"
+
+- name: Speedtest | Download tarball
+  ansible.builtin.get_url:
+    url: "{{ node_speedtest_direct_url }}"
+    dest: "/tmp/ookla-speedtest-{{ _speedtest_arch }}.tgz"
+    mode: "0644"
+
+- name: Speedtest | Ensure unpack dir
+  ansible.builtin.file:
+    path: "/tmp/ookla-speedtest-{{ _speedtest_arch }}"
+    state: directory
+    mode: "0755"
+
+- name: Speedtest | Unpack tarball
+  ansible.builtin.unarchive:
+    src: "/tmp/ookla-speedtest-{{ _speedtest_arch }}.tgz"
+    dest: "/tmp/ookla-speedtest-{{ _speedtest_arch }}"
+    remote_src: true
+    extra_opts: [--no-same-owner]
+
+- name: Speedtest | Ensure target dir exists
+  ansible.builtin.file:
+    path: "{{ node_speedtest_bin | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Speedtest | Install binary → {{ node_speedtest_bin }}
+  ansible.builtin.copy:
+    src: "/tmp/ookla-speedtest-{{ _speedtest_arch }}/speedtest"
+    dest: "{{ node_speedtest_bin }}"
+    remote_src: true
+    mode: "0755"

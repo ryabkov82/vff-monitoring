@@ -6,22 +6,13 @@
     update_cache: true
   tags: [ru_probe]
 
-- name: RU probe | Ensure textfile dir exists
-  ansible.builtin.file:
-    path: "{{ node_exporter_textfile_dir }}"
-    state: directory
-    mode: "0755"
-    owner: root
-    group: root
-  tags: [ru_probe]
-
 - name: RU probe | Install script
   ansible.builtin.template:
     src: ru_iperf_probe.sh.j2
     dest: /usr/local/bin/ru_iperf_probe.sh
     mode: "0755"
     owner: root
-    group: root
+    group: "{{ ru_probe_group }}"
   tags: [ru_probe]
 
 - name: RU probe | Drop env file (optional overrides)
@@ -30,7 +21,7 @@
     dest: /etc/default/ru-iperf-probe
     mode: "0644"
     owner: root
-    group: root
+    group: "{{ ru_probe_group }}"
   tags: [ru_probe]
 
 - name: RU probe | Systemd units

@@ -1,0 +1,10 @@
+---
+- name: Speedtest | Check existing binary
+  ansible.builtin.command: "{{ node_speedtest_bin }} --version"
+  register: _speedtest_ver
+  changed_when: false
+  failed_when: false
+
+- name: Speedtest | Set present flag
+  ansible.builtin.set_fact:
+    speedtest_present: "{{ _speedtest_ver.rc == 0 }}"

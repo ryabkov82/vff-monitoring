@@ -28,6 +28,9 @@ vpn_nodes:
     role: "vpn"
     uplink_device: "ens3"         # опц., по умолчанию ens3
     uplink_speed_bps: 10000000000  # 10 Gbit/s    
+    reality:
+      e2e_enabled: true          # <- включить генерацию профиля и таймеров
+      sni: "segment-ams-01.digitalstreamers.xyz"
   - name: "nl-ams-2"               # ← новый
     instance: "10.77.0.3:9100"
     wg_ip: "10.77.0.3"
@@ -35,7 +38,7 @@ vpn_nodes:
     uplink_device: "ens3"
     uplink_speed_bps: 10000000000
     reality:
-      e2e_enabled: true          # <- включить генерацию профиля и таймеров
+      e2e_enabled: true
       sni: "segment-ams-02.digitalstreamers.xyz"
   # - name: "DE-1"
   #   instance: "10.66.0.3:9100"
@@ -68,3 +71,7 @@ marzban_exporter_protected: true
 # используется для доступа к prometheus с узлов
 prom_user: "admin"
 prom_pass: "{{ hostvars[groups['hub'][0]].nginx_passwords.admin | default('') }}"
+
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+node_exporter_user: node_exporter
+node_exporter_group: node_exporter

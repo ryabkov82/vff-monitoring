@@ -1,12 +1,30 @@
-{% set have_tg = (am_telegram_bot_token | default('') | length) > 0
+{# =======================
+# Alertmanager config
+# ======================= #}
+{% set have_tg = (am_telegram_bot_token | default('') | trim | length) > 0
                   and (am_telegram_chat_id | default(None)) is not none %}
+
+global:
+  resolve_timeout: {{ am_global_resolve_timeout | default('5m') }}
+
 route:
-  receiver: {{ 'telegram' if have_tg else 'blackhole' }}
+  receiver: {{ have_tg and 'tg' or 'blackhole' }}
+  group_by:
+{% for lb in am_route_group_by | default(['alertname','instance']) %}
+    - {{ lb }}
+{% endfor %}
+  group_wait: {{ am_route_group_wait | default('30s') }}
+  group_interval: {{ am_route_group_interval | default('5m') }}
+  repeat_interval: {{ am_route_repeat_interval | default('2h') }}
+
 receivers:
-  {% if have_tg %}
-  - name: telegram
+{% if have_tg %}
+  - name: tg
     telegram_configs:
       - bot_token: "{{ am_telegram_bot_token }}"
         chat_id: {{ am_telegram_chat_id | int }}
-  {% endif %}
+        api_url: "{{ am_telegram_api_url | default('https://api.telegram.org') }}"
+        parse_mode: "{{ am_telegram_parse_mode | default('') }}"
+        send_resolved: {{ (am_telegram_send_resolved | default(true)) | bool | to_json }}
+{% endif %}
   - name: blackhole
