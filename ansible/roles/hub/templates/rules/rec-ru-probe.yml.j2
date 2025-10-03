@@ -6,6 +6,7 @@ groups:
     expr: max by (name) (
             last_over_time(ru_probe_throughput_bps{job="ru-probe",direction="uplink"}[1h])
           )
+
   - record: ru:wg:throughput_downlink_bps
     expr: max by (name) (
             last_over_time(ru_probe_throughput_bps{job="ru-probe",direction="downlink"}[1h])
@@ -16,3 +17,25 @@ groups:
     expr: time() - max by (name) (
             last_over_time(ru_probe_last_run_timestamp_seconds{job="ru-probe"}[6h])
           )
+
+  # База (baseline) — 75-й перцентиль за 7 дней, со сдвигом на сутки назад
+  - record: ru:wg:throughput_uplink_bps:baseline7d
+    expr: |
+      max by (name) (
+        quantile_over_time(0.75, ru:wg:throughput_uplink_bps[7d] offset 24h)
+      )
+
+  - record: ru:wg:throughput_downlink_bps:baseline7d
+    expr: |
+      max by (name) (
+        quantile_over_time(0.75, ru:wg:throughput_downlink_bps[7d] offset 24h)
+      )
+
+  # Отношение к базе (ratio)
+  - record: ru:wg:uplink_ratio:latest_vs_baseline7d
+    expr: ru:wg:throughput_uplink_bps
+          / clamp_min(ru:wg:throughput_uplink_bps:baseline7d, 1)
+
+  - record: ru:wg:downlink_ratio:latest_vs_baseline7d
+    expr: ru:wg:throughput_downlink_bps
+          / clamp_min(ru:wg:throughput_downlink_bps:baseline7d, 1)

@@ -1,41 +1,41 @@
 groups:
 - name: alerts-ru-probe
   rules:
-  # WG: низкий uplink (в Mbps)
-  - alert: RUWGThroughputLowUplink
-    expr: (ru:wg:throughput_uplink_bps / 1e6) < 60
-    for: 30m
+  # WG: падение uplink относительно 7-дневной базы
+  - alert: RUWGThroughputUplinkDrop
+    expr: |
+      (ru:wg:uplink_ratio:latest_vs_baseline7d < 0.7)
+      and on (name) (ru:wg:last_run_age_seconds < 36000)
     labels:
       severity: warning
     annotations:
       summary: |
-        {% raw %}Низкая сквозная скорость WG (uplink) — {{ $labels.name }}{% endraw %}
-
+        {% raw %}Падение WG uplink на {{ $labels.name }} (>30% относительно 7-дневной базы){% endraw %}
       description: |
-        {% raw %}Uplink сейчас {{ printf "%.1f" $value }} Mbps (< 60 Mbps).{% endraw %}
-
-  # WG: низкий downlink (в Mbps)
-  - alert: RUWGThroughputLowDownlink
-    expr: (ru:wg:throughput_downlink_bps / 1e6) < 60
-    for: 30m
+        Текущая сквозная скорость uplink заметно ниже исторической (ratio < 0.7).
+  
+  # WG: падение downlink относительно 7-дневной базы
+  - alert: RUWGThroughputDownlinkDrop
+    expr: |
+      (ru:wg:downlink_ratio:latest_vs_baseline7d < 0.7)
+      and on (name) (ru:wg:last_run_age_seconds < 36000)
     labels:
       severity: warning
     annotations:
       summary: |
-        {% raw %}Низкая сквозная скорость WG (downlink) — {{ $labels.name }}{% endraw %}
-
+        {% raw %}Падение WG downlink на {{ $labels.name }} (>30% относительно 7-дневной базы){% endraw %}
       description: |
-        {% raw %}Downlink сейчас {{ printf "%.1f" $value }} Mbps (< 60 Mbps).{% endraw %}
+        Текущая сквозная скорость downlink заметно ниже исторической (ratio < 0.7).
 
   # WG-проба не обновлялась (staleness)
   - alert: RUWGProbeStale
-    expr: ru:wg:last_run_age_seconds > 10h
+    # значение > 0 означает: на сколько секунд превышен порог 10h (36000s)
+    expr: clamp_min(ru:wg:last_run_age_seconds - 36000, 0)
     for: 30m
     labels:
       severity: warning
     annotations:
       summary: |
         {% raw %}WG iperf-проба не обновлялась > 10 часов — {{ $labels.name }}{% endraw %}
-
       description: |
         {% raw %}Текущее отставание: {{ humanizeDuration $value }}.{% endraw %}
