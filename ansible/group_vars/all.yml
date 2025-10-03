@@ -48,7 +48,34 @@ vpn_nodes:
     uplink_speed_bps: 10000000000
     reality:
       e2e_enabled: true
-      sni: "segment-ams-03.digitalstreamers.xyz"    
+      sni: "segment-ams-03.digitalstreamers.xyz"
+  - name: "ru-spb-1"
+    instance: "10.77.0.5:9100"
+    wg_ip: "10.77.0.5"
+    role: "vpn"
+    uplink_device: "eth0"
+    uplink_speed_bps: 1000000000
+    reality:
+      e2e_enabled: true
+      sni: "www.cloudflare.com"
+  - name: "fi-hel-1"
+    instance: "10.77.0.6:9100"
+    wg_ip: "10.77.0.6"
+    role: "vpn"
+    uplink_device: "ens18"
+    uplink_speed_bps: 1000000000
+    reality:
+      e2e_enabled: true
+      sni: "www.cloudflare.com"
+  - name: "de-fra-1"
+    instance: "10.77.0.7:9100"
+    wg_ip: "10.77.0.7"
+    role: "vpn"
+    uplink_device: "ens192"
+    uplink_speed_bps: 1000000000
+    reality:
+      e2e_enabled: true
+      sni: "www.cloudflare.com"
   # - name: "DE-1"
   #   instance: "10.66.0.3:9100"
   #   role: "vpn"
