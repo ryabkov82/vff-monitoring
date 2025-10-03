@@ -1,12 +1,8 @@
----
-- name: Derive wg_ip from vpn_nodes by inventory_hostname (if not set)
-  ansible.builtin.set_fact:
-    wg_ip: >-
-      {{ (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | first).wg_ip }}
-  when:
-    - wg_ip is not defined
-    - vpn_nodes is defined
-    - (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | length) > 0
+- name: WireGuard | Consolidate host facts
+  ansible.builtin.include_role:
+    name: wireguard_facts
+  apply:
+    tags: [node_exporter, wireguard, wg_facts]
 
 - name: Install and run node_exporter (single @instance on WG IP)
   tags: [node_exporter]
@@ -127,5 +123,5 @@
         rule: allow
         proto: tcp
         port: "{{ node_exporter_port }}"
-        from_ip: "{{ (wg_ip | regex_replace('\\.\\d+$', '.0')) }}/24"
+        from_ip: "{{ wg_subnet_cidr }}"
         comment: "node_exporter @{{ node_exporter_listen }}"

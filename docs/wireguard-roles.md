@@ -9,6 +9,7 @@
 
 - `ansible/roles/wireguard_hub/tasks/main.yml` — настройка **хаба**: ключи, сбор pubkey'ев узлов, рендер `/etc/wireguard/<iface>.conf`, UFW, запуск `wg-quick`.
 - `ansible/roles/wireguard_node/tasks/main.yml` — настройка **узла**: ключи, получение pubkey хаба, рендер `/etc/wireguard/<iface>.conf`, запуск `wg-quick`.
+- `ansible/roles/wireguard_facts` — **единая консолидация WireGuard-фактов**: ищет описание узла в `vpn_nodes`, задаёт `wg_ip`, `wg_subnet_cidr`, подставляет `hub_wg_ip_effective` и кэширует имя хаба.
 
 Роли вызываются из `ansible/site.yml` и удобнее запускать через цели Makefile (см. ниже).
 
@@ -62,7 +63,7 @@ vpn_nodes:
   #   role: "vpn"
 ```
 
-> Роль `wireguard_node` **не требует** `host_vars`: она находит `wg_ip` по записи в `vpn_nodes`, где `name == inventory_hostname`. Если записи нет — задача упадёт с понятной ошибкой (нужно добавить узел в `vpn_nodes`).
+> Факт `wg_ip` и связанные с ним вычисления (`wg_subnet_cidr`, `hub_wg_ip_effective`) собирает роль `wireguard_facts`. Она автоматически подключается из `wireguard_node`, `node_exporter`, `node:iperf` и доступна для переиспользования в других ролях.
 
 ---
 

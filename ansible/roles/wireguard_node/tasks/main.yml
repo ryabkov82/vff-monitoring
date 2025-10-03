@@ -46,14 +46,11 @@
       ansible.builtin.set_fact:
         node_wg_pubkey: "{{ node_pub_raw.content | b64decode | trim }}"
 
-    - name: Derive wg_ip from vpn_nodes by inventory_hostname (if not set)
-      ansible.builtin.set_fact:
-        wg_ip: >-
-          {{ (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | first).wg_ip }}
-      when:
-        - wg_ip is not defined
-        - vpn_nodes is defined
-        - (vpn_nodes | selectattr('name', 'equalto', inventory_hostname) | list | length) > 0
+    - name: WireGuard | Consolidate host facts
+      ansible.builtin.include_role:
+        name: wireguard_facts
+      apply:
+        tags: [wg, wireguard, wg_facts]
 
     - name: Assert wg_ip is defined for this node
       ansible.builtin.assert:
