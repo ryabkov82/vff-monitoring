@@ -1,13 +1,13 @@
 ---
 - name: WireGuard facts | Lookup vpn_nodes entry for this host
-  vars:
-    _matches: "{{ vpn_nodes | default([]) | selectattr('name', 'equalto', inventory_hostname) | list }}"
   ansible.builtin.set_fact:
-    wireguard_node_entry: "{{ _matches[0] }}"
+    wireguard_node_entry: >-
+      {{
+        (vpn_nodes | default([]) | selectattr('name', 'equalto', inventory_hostname) | list | first)
+      }}
   when:
     - vpn_nodes is defined
     - wireguard_node_entry is not defined
-    - _matches | length > 0
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Derive wg_ip from entry
@@ -22,8 +22,7 @@
 - name: WireGuard facts | Normalize wg_ip to string
   ansible.builtin.set_fact:
     wg_ip: "{{ wg_ip | string }}"
-  when:
-    - wg_ip is defined
+  when: wg_ip is defined
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Derive /24 subnet cidr from wg_ip
@@ -31,7 +30,7 @@
     wg_subnet_cidr: "{{ (wg_ip | regex_replace('\\.\\d+$', '.0')) }}/24"
   when:
     - wg_ip is defined
-    - (wg_ip | length) > 0
+    - wg_ip | length > 0
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Remember hub inventory host (if any)
@@ -39,19 +38,24 @@
     wireguard_hub_inventory_host: "{{ groups['hub'][0] }}"
   when:
     - wireguard_hub_inventory_host is not defined
-    - 'hub' in groups
-    - (groups['hub'] | length) > 0
+    - groups['hub'] is defined
+    - groups['hub'] | length > 0
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Derive effective hub wg_ip
-  vars:
-    _hub_candidate: "{{ wireguard_hub_inventory_host | default('') }}"
-    _hub_ip_guess: "{{ hostvars[_hub_candidate].hub_wg_ip | default(hostvars[_hub_candidate].wg_ip | default('')) if (_hub_candidate | length > 0) else '' }}"
   ansible.builtin.set_fact:
-    hub_wg_ip_effective: "{{ hub_wg_ip | default(_hub_ip_guess) }}"
-  when:
-    - hub_wg_ip_effective is not defined
-    - ((hub_wg_ip is defined) and (hub_wg_ip | length) > 0) or (_hub_ip_guess | length) > 0
+    hub_wg_ip_effective: >-
+      {{
+        hub_wg_ip
+        | default(
+            hostvars.get(wireguard_hub_inventory_host | default(''), {})
+                     .get('hub_wg_ip',
+                          hostvars.get(wireguard_hub_inventory_host | default(''), {})
+                                  .get('wg_ip', '')
+                     )
+          )
+      }}
+  when: hub_wg_ip_effective is not defined
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Provide /32 hub cidr helper
@@ -59,7 +63,7 @@
     hub_wg_ip_cidr32: "{{ hub_wg_ip_effective }}/32"
   when:
     - hub_wg_ip_effective is defined
-    - (hub_wg_ip_effective | length) > 0
+    - hub_wg_ip_effective | length > 0
   tags: [wireguard, wg_facts]
 
 - name: WireGuard facts | Mark consolidation complete
