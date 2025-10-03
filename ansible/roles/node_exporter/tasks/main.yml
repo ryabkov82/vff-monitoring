@@ -1,8 +1,11 @@
+---
 - name: WireGuard | Consolidate host facts
-  ansible.builtin.include_role:
+  ansible.builtin.import_role:
     name: wireguard_facts
-  apply:
-    tags: [node_exporter, wireguard, wg_facts]
+  tags:
+    - node_exporter
+    - wireguard
+    - wg_facts
 
 - name: Install and run node_exporter (single @instance on WG IP)
   tags: [node_exporter]

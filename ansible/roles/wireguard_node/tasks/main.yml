@@ -47,10 +47,12 @@
         node_wg_pubkey: "{{ node_pub_raw.content | b64decode | trim }}"
 
     - name: WireGuard | Consolidate host facts
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: wireguard_facts
-      apply:
-        tags: [wg, wireguard, wg_facts]
+      tags:
+        - wg
+        - wireguard
+        - wg_facts
 
     - name: Assert wg_ip is defined for this node
       ansible.builtin.assert:

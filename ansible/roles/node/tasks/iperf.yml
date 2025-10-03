@@ -1,8 +1,12 @@
 - name: WireGuard | Consolidate host facts
-  ansible.builtin.include_role:
+  ansible.builtin.import_role:
     name: wireguard_facts
-  apply:
-    tags: [node, node_iperf, iperf3, wireguard, wg_facts]
+  tags:
+    - node
+    - node_iperf
+    - iperf3
+    - wireguard
+    - wg_facts
 
 - name: Iperf3 | Install server package
   when: node_iperf_enable | bool
