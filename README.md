@@ -1,3 +1,4 @@
+
 # vff-monitoring
 
 Мониторинг VPN‑инфраструктуры: Prometheus + Grafana + Alertmanager + Blackbox, метрики узлов (node_exporter + textfile), RU‑probe (iperf3), Speedtest (Ookla), WireGuard, REALITY (xray/sing‑box) и E2E‑проверки.
@@ -7,12 +8,13 @@
 ## Содержание
 
 - [Архитектура](#архитектура)
+- [Интеграции и внешние проекты](#интеграции-и-внешние-проекты)
 - [Runbooks / Документация по ролям](#runbooks--документация-по-ролям)
 - [Быстрый старт (Make)](#быстрый-старт-make)
 - [Полезные команды (Make)](#полезные-команды-make)
 - [Требования](#требования)
 - [Структура репозитория](#структура-репозитория)
-- [Поддержка и вклад](#Поддержка-и-вклад)
+- [Поддержка и вклад](#поддержка-и-вклад)
 
 ---
 
@@ -122,6 +124,13 @@ flowchart LR
 
 ```
 </details>
+
+---
+
+## Интеграции и внешние проекты
+
+- **Marzban Exporter (Prometheus):** https://github.com/kutovoys/marzban-exporter
+- **Marzban (панель управления):** https://github.com/Gozargah/Marzban
 
 ---
 
@@ -238,4 +247,4 @@ PR приветствуются: дополнения к ролям, новые 
 
 ---
 
-© VPN for Friends · Monitoring Stack
+© [VPN for Friends](https://t.me/vpn_for_myfriends_bot) · Monitoring Stack
