@@ -29,8 +29,10 @@ groups:
 
   # WG-проба не обновлялась (staleness)
   - alert: RUWGProbeStale
-    # значение > 0 означает: на сколько секунд превышен порог 10h (36000s)
-    expr: clamp_min(ru:wg:last_run_age_seconds - 36000, 0)
+    expr: |
+      (ru:wg:last_run_age_seconds > 36000)
+      and
+      ru:wg:last_run_age_seconds
     for: 30m
     labels:
       severity: warning
