@@ -1,0 +1,2 @@
+# List of UFW rules to apply. Each item is passed directly to community.general.ufw.
+ufw_firewall_rules: []

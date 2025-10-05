@@ -106,18 +106,15 @@
         mode: "0600"
       notify: Restart wg-quick
 
-    - name: Detect ufw presence
-      ansible.builtin.stat:
-        path: /usr/sbin/ufw
-      register: ufw_present
-
-    - name: Allow WireGuard UDP port in ufw (if present)
-      community.general.ufw:
-        rule: allow
-        proto: udp
-        port: "{{ wg_listen_port }}"
-        comment: "WireGuard {{ wg_iface }}"
-      when: ufw_present.stat.exists
+    - name: Configure ufw for WireGuard hub
+      ansible.builtin.include_role:
+        name: ufw_firewall
+      vars:
+        ufw_firewall_rules:
+          - rule: allow
+            proto: udp
+            port: "{{ wg_listen_port }}"
+            comment: "WireGuard {{ wg_iface }}"
 
     - name: Enable + start wg interface
       ansible.builtin.systemd:
