@@ -1,0 +1,25 @@
+---
+- name: Detect ufw presence
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_firewall_ufw
+
+- name: Apply configured ufw firewall rules
+  when:
+    - ufw_firewall_ufw.stat.exists
+    - (ufw_firewall_rules | default([])) | length > 0
+  community.general.ufw:
+    rule: "{{ item.rule | default('allow') }}"     # allow|deny|reject
+    port: "{{ item.port | default(omit) }}"        # "9100" или "5000:5010"
+    proto: "{{ item.proto | default(omit) }}"      # tcp|udp
+    from_ip: "{{ item.from | default(omit) }}"     # CIDR или 'any'
+    to_ip: "{{ item.to | default(omit) }}"
+    direction: "{{ item.direction | default(omit) }}"  # in|out
+    state: "{{ item.state | default(omit) }}"      # enabled/disabled для default-политик
+    default: "{{ item.default | default(omit) }}"  # для задания default-политик
+    logging: "{{ item.logging | default(omit) }}"
+    comment: "{{ item.comment | default(omit) }}"
+  loop: "{{ ufw_firewall_rules | default([]) }}"
+  loop_control:
+    label: >-
+      {{ item.comment | default(item.name | default(item.port | default(item.rule | default('rule')))) }}
