@@ -112,16 +112,13 @@
         enabled: true
         state: started
 
-    - name: Detect ufw presence
-      ansible.builtin.stat:
-        path: /usr/sbin/ufw
-      register: ufw_present
-
-    - name: Allow node_exporter from WG subnet via ufw
-      when: ufw_present.stat.exists
-      community.general.ufw:
-        rule: allow
-        proto: tcp
-        port: "{{ node_exporter_port }}"
-        from_ip: "{{ wg_subnet_cidr }}"
-        comment: "node_exporter @{{ node_exporter_listen }}"
+    - name: Configure ufw for node_exporter
+      ansible.builtin.include_role:
+        name: ufw_firewall
+      vars:
+        ufw_firewall_rules:
+          - rule: allow
+            proto: tcp
+            port: "{{ node_exporter_port }}"
+            from_ip: "{{ wg_subnet_cidr }}"
+            comment: "node_exporter @{{ node_exporter_listen }}"

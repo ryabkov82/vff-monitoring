@@ -1,0 +1,15 @@
+---
+- name: Detect ufw presence
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_firewall_ufw
+
+- name: Apply configured ufw firewall rules
+  when:
+    - ufw_firewall_ufw.stat.exists
+    - (ufw_firewall_rules | default([])) | length > 0
+  community.general.ufw: "{{ item }}"
+  loop: "{{ ufw_firewall_rules | default([]) }}"
+  loop_control:
+    label: >-
+      {{ item.comment | default(item.name | default(item.port | default(item.rule | default('rule')))) }}
