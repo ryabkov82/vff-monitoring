@@ -8,18 +8,13 @@ services:
       - "--web.external-url={{ external_url_prometheus }}"
       - "--web.listen-address=127.0.0.1:{{ prometheus_port }}"
       - "--web.enable-lifecycle"
+      - "--storage.tsdb.retention.time={{ prometheus_tsdb_retention_time | default('7d') }}"
+      - "--storage.tsdb.wal-compression"
     volumes:
       - "{{ monitoring_root }}/prometheus:/etc/prometheus:ro"
       - "prom_data:/prometheus"
     network_mode: host
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ prometheus_port }}/-/ready"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
 
   alertmanager:
     image: "{{ alertmanager_image }}"
@@ -32,34 +27,22 @@ services:
       - "am_data:/alertmanager"
     network_mode: host
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ alertmanager_port }}/-/ready"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
   blackbox:
     image: "{{ blackbox_image }}"
     command:
       - "--config.file=/etc/blackbox_exporter/blackbox.yml"
-      - "--web.listen-address=127.0.0.1:{{ blackbox_port }}"    
+      - "--web.listen-address=127.0.0.1:{{ blackbox_port }}"
     volumes:
       - "{{ monitoring_root }}/blackbox:/etc/blackbox_exporter:ro"
     network_mode: host
     cap_add:
       - NET_RAW
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ blackbox_port }}/metrics"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
   grafana:
     image: "{{ grafana_image }}"
-    user: "472:472"                    # опционально, но полезно
+    user: "472:472"
     environment:
       GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
@@ -75,22 +58,8 @@ services:
       - "{{ grafana_provisioning_dir }}:/etc/grafana/provisioning:ro"
       - "{{ grafana_dashboards_dir }}:/var/lib/grafana/dashboards:ro"
       - "graf_data:/var/lib/grafana"
-      # если понадобятся кастомные плагины, раскомментируй:
-      # - ./grafana/plugins:/var/lib/grafana/plugins      
     network_mode: host
     restart: unless-stopped
-    healthcheck:
-      test:
-        - "CMD"
-        - "bash"
-        - "-lc"
-        - >
-          curl -fsS http://127.0.0.1:{{ grafana_port }}/api/health
-          -u "{{ grafana_admin_user }}:{{ grafana_admin_password }}"
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
 {% if marzban_exporter_enabled | bool %}
   marzban-exporter:
@@ -107,13 +76,8 @@ services:
       METRICS_PASSWORD: "{{ EXPORTER_METRICS_PASS }}"
     ports:
       - "127.0.0.1:{{ marzban_exporter_bind_port }}:{{ marzban_exporter_metrics_port }}"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:{{ marzban_exporter_metrics_port }}/metrics"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 {% endif %}
-  
+
 volumes:
   prom_data: {}
   am_data: {}

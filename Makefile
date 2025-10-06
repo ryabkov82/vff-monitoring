@@ -49,6 +49,10 @@ node-exporter-hub: ## Установить/обновить node_exporter тол
 	@# Пример: make node-exporter-hub
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags node_exporter $(ANSIBLE_FLAGS)
 
+hub-compose: ## Применить роль 'compose' (рендер docker-compose) на хабе
+	@# Пример: make hub-compose
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags compose,health $(ANSIBLE_FLAGS)
+
 hub: ## Применить роль 'hub' (рендер targets/rules и пр.) на хабе
 	@# Пример: make hub
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags hub $(ANSIBLE_FLAGS)

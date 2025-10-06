@@ -16,6 +16,8 @@ alertmanager_port: 9093
 grafana_port: 3000
 blackbox_port: 9115
 
+prometheus_tsdb_retention_time: "7d"
+
 wg_iface: wgmon0
 wg_listen_port: 51821
 wg_mtu: 1280
