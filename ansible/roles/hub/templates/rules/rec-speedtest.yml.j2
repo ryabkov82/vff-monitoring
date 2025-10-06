@@ -1,37 +1,93 @@
 groups:
 - name: rec-speedtest
   rules:
+  # ===== LATEST per-server (берём последнее значение за 36h) =====
+  - record: node:internet_download_bps:latest_by_server
+    expr: |
+      max by (name, server, server_location, server_id) (
+        last_over_time(vpn_speed_download_bps{method="ookla"}[36h])
+      )
+
+  - record: node:internet_upload_bps:latest_by_server
+    expr: |
+      max by (name, server, server_location, server_id) (
+        last_over_time(vpn_speed_upload_bps{method="ookla"}[36h])
+      )
+
+  # Возраст последнего прогона per-server (берём метку времени из окна 48h)
+  - record: node:internet_speed_last_age_seconds:by_server
+    expr: |
+      time() - max by (name, server, server_location, server_id) (
+        last_over_time(vpn_speed_last_run_timestamp_seconds{method="ookla"}[48h])
+      )
+
+  # ===== BASELINE per-server (p75 за 7 дней, со сдвигом на сутки) =====
+  - record: node:internet_download_bps:baseline7d_by_server
+    expr: |
+      quantile_over_time(0.75,
+        vpn_speed_download_bps{method="ookla"}[7d] offset 24h
+      )
+
+  - record: node:internet_upload_bps:baseline7d_by_server
+    expr: |
+      quantile_over_time(0.75,
+        vpn_speed_upload_bps{method="ookla"}[7d] offset 24h
+      )
+
+  # ===== RATIO per-server =====
+  - record: node:internet_download_ratio:latest_vs_baseline7d:by_server
+    expr: |
+      node:internet_download_bps:latest_by_server
+      /
+      clamp_min(node:internet_download_bps:baseline7d_by_server, 1)
+
+  - record: node:internet_upload_ratio:latest_vs_baseline7d:by_server
+    expr: |
+      node:internet_upload_bps:latest_by_server
+      /
+      clamp_min(node:internet_upload_bps:baseline7d_by_server, 1)
+
+  # Оставляем только "свежие" per-server ряды (есть прогон за последние 48h)
+  - record: node:internet_download_ratio:latest_vs_baseline7d:by_server:fresh
+    expr: |
+      node:internet_download_ratio:latest_vs_baseline7d:by_server
+      and on (name, server, server_location, server_id)
+      (node:internet_speed_last_age_seconds:by_server < 172800)   # 48h
+
+  - record: node:internet_upload_ratio:latest_vs_baseline7d:by_server:fresh
+    expr: |
+      node:internet_upload_ratio:latest_vs_baseline7d:by_server
+      and on (name, server, server_location, server_id)
+      (node:internet_speed_last_age_seconds:by_server < 172800)   # 48h
+
+  # ===== Агрегация по узлу (убираем server*) =====
+  # Берём лучший (максимальный) ratio среди серверов — если хоть один нормальный, алерта не будет.
+  - record: node:internet_download_ratio:latest_vs_baseline7d
+    expr: |
+      max by (name) (node:internet_download_ratio:latest_vs_baseline7d:by_server:fresh)
+
+  - record: node:internet_upload_ratio:latest_vs_baseline7d
+    expr: |
+      max by (name) (node:internet_upload_ratio:latest_vs_baseline7d:by_server:fresh)
+
+  # Свежесть по узлу — минимальный возраст среди серверов (хотя бы один свежий прогон)
+  - record: node:internet_speed_last_age_seconds
+    expr: |
+      min by (name) (node:internet_speed_last_age_seconds:by_server)
+
+  # «Плоские» latest/baseline по узлу — агрегируем лучший сервер
   - record: node:internet_download_bps:latest
-    expr: max without(method, server, server_location, server_id) (
-            max_over_time(vpn_speed_download_bps{method="ookla"}[1h])
-          )
+    expr: |
+      max by (name) (node:internet_download_bps:latest_by_server)
 
   - record: node:internet_upload_bps:latest
-    expr: max without(method, server, server_location, server_id) (
-            max_over_time(vpn_speed_upload_bps{method="ookla"}[1h])
-          )
+    expr: |
+      max by (name) (node:internet_upload_bps:latest_by_server)
 
-  - record: node:internet_speed_last_age_seconds
-    expr: time() - max without(method, server, server_location, server_id) (
-            max_over_time(vpn_speed_last_run_timestamp_seconds{method="ookla"}[24h])
-          )
-
-  # База (baseline) — 75-й перцентиль за 7 дней, со сдвигом на сутки назад
   - record: node:internet_download_bps:baseline7d
     expr: |
-      max without(method, server, server_location, server_id) (
-        quantile_over_time(0.75, vpn_speed_download_bps{method="ookla"}[7d] offset 24h)
-      )
+      max by (name) (node:internet_download_bps:baseline7d_by_server)
 
   - record: node:internet_upload_bps:baseline7d
     expr: |
-      max without(method, server, server_location, server_id) (
-        quantile_over_time(0.75, vpn_speed_upload_bps{method="ookla"}[7d] offset 24h)
-      )
-
-  # Отношение к базе (ratio)
-  - record: node:internet_download_ratio:latest_vs_baseline7d
-    expr: node:internet_download_bps:latest / clamp_min(node:internet_download_bps:baseline7d, 1)
-
-  - record: node:internet_upload_ratio:latest_vs_baseline7d
-    expr: node:internet_upload_bps:latest / clamp_min(node:internet_upload_bps:baseline7d, 1)
+      max by (name) (node:internet_upload_bps:baseline7d_by_server)
