@@ -1,4 +1,3 @@
-
 # vff-monitoring
 
 Мониторинг VPN‑инфраструктуры: Prometheus + Grafana + Alertmanager + Blackbox, метрики узлов (node_exporter + textfile), RU‑probe (iperf3), Speedtest (Ookla), WireGuard, REALITY (xray/sing‑box) и E2E‑проверки.
@@ -147,6 +146,8 @@ flowchart LR
 - Роль Speedtest (Ookla) (textfile‑метрики для node_exporter): [docs/speedtest_ookla.md](docs/speedtest_ookla.md)
 - Роль sing_box (установка бинаря sing‑box): [docs/sing_box-role.md](docs/sing_box-role.md)
 - Роль Reality E2E (sing‑box энд‑ту‑энд проверка): [docs/reality_e2e-role.md](docs/reality_e2e-role.md)
+- **Развёртывание RU‑зонда (ru_zondes):** [docs/NEW_RU_ZONDE.md](docs/NEW_RU_ZONDE.md)
+- **Подключение нового VPN‑узла:** [docs/NEW_NODE.md](docs/NEW_NODE.md)
 
 ---
 
@@ -165,7 +166,7 @@ make hub
 make grafana
 ```
 
-Онбординг нового узла (WG + агенты + обновления на хабе) [docs/NEW_NODE.md](docs/NEW_NODE.md):
+Онбординг нового VPN‑узла (WG + агенты + обновления на хабе): [docs/NEW_NODE.md](docs/NEW_NODE.md)
 
 ```bash
 # Полный сценарий
@@ -173,6 +174,16 @@ make add-node HOST=nl-ams-2
 
 # Проверка после онбординга
 make add-node-check HOST=nl-ams-2
+```
+
+Онбординг **RU‑зонда** (на отдельном хосте или на самом хабе): [docs/NEW_RU_ZONDE.md](docs/NEW_RU_ZONDE.md)
+
+```bash
+# Все роли на одном зонде + пересборка WG на хабе + обновление Prometheus
+make ru-zondes-setup-host HOST=ru-msk-1
+
+# Все зонды группы + пересборка WG на хабе + обновление Prometheus
+make ru-zondes-setup
 ```
 
 ---
@@ -206,6 +217,10 @@ make wg-metrics-install HOST=<h>  # раскатка textfile-метрик WG
 make reality-install HOST=<h>     # health‑скрипт (svc) на узле
 make reality-e2e                  # роли и таймеры E2E на хабе
 make reality-e2e-run PROFILE=p    # разовый запуск сервиса профиля
+
+# RU‑зонды
+make ru-zondes-setup-host HOST=<h># все роли на одном зонде → wg-hub → prom-rules
+make ru-zondes-setup              # все роли на всех зондах → wg-hub → prom-rules
 ```
 
 > Любой таргет можно запускать с переменной `ANSIBLE_FLAGS`, например:

@@ -1,0 +1,6 @@
+- name: RU zondes (probes)
+  hosts: ru_zondes
+  roles:
+    - { role: wireguard_node, tags: [wg, wg_node] }
+    - { role: node_exporter, tags: [node_exporter] }
+    - { role: ru_probe, when: ru_probe_enabled | bool, tags: [ru_probe] }

@@ -24,20 +24,6 @@
   when: _rules_tpls | length > 0
   notify: Prometheus reload
 
-- name: Build ru-probe targets (effective)
-  ansible.builtin.set_fact:
-    ru_probe_targets_eff: >-
-      {{
-        ru_probe_targets
-          | default([{
-              'address': (ru_probe_address | default(inventory_hostname ~ ':9100')),
-              'labels': {
-                'name': (ru_probe_name | default('RU-probe (' ~ inventory_hostname ~ ')')),
-                'role': 'probe'
-              }
-            }])
-      }}
-
 # Рендерим все targets/*.json.j2 -> <monitoring_root>/prometheus/targets/*.json
 - name: Render Prometheus targets (file_sd, auto)
   ansible.builtin.template:

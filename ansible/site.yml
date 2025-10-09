@@ -1,20 +1,3 @@
----
-- name: Hub (monitoring server)
-  hosts: hub
-  roles:
-    - { role: wireguard_hub, tags: [wg, wg_hub] }
-    - { role: docker, when: docker_install | bool, tags: [docker] }   # установка Docker/Compose
-    - { role: node_exporter, tags: [node_exporter], vars: { wg_ip: "{{ hub_wg_ip }}" } }
-    - { role: nginx, tags: [nginx] }    # reverse-proxy, certs, htpasswd
-    - { role: hub, tags: [hub] }
-    - { role: ru_probe, when: ru_probe_enabled | bool, tags: [ru_probe] }
-    - { role: sing_box, tags: [sing_box] }
-    - { role: reality_e2e, when: reality_e2e_enabled | bool, tags: [reality_e2e] }
-
-- name: VPN nodes
-  hosts: vpn
-  roles:
-    - { role: wireguard_node, tags: [wg, wg_node] }
-    - { role: node_exporter, tags: [node_exporter] }
-    - { role: node, tags: [node] }
-    - { role: speedtest_ookla, tags: [speedtest_ookla] }
+- import_playbook: playbooks/hub.yml         # noqa: name[play]
+- import_playbook: playbooks/vpn.yml         # noqa: name[play]
+- import_playbook: playbooks/ru_zondes.yml   # noqa: name[play]

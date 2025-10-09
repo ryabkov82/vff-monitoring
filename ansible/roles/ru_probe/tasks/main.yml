@@ -1,51 +1,10 @@
 ---
-- name: RU probe | Install deps
-  ansible.builtin.apt:
-    name: [iperf3, jq, curl]
-    state: present
-    update_cache: true
+- name: RU probe | Present path
+  ansible.builtin.include_tasks: present.yml
+  when: ru_probe_state | lower == 'present'
   tags: [ru_probe]
 
-- name: RU probe | Install script
-  ansible.builtin.template:
-    src: ru_iperf_probe.sh.j2
-    dest: /usr/local/bin/ru_iperf_probe.sh
-    mode: "0755"
-    owner: root
-    group: "{{ ru_probe_group }}"
-  tags: [ru_probe]
-
-- name: RU probe | Drop env file (optional overrides)
-  ansible.builtin.template:
-    src: ru-iperf-probe.env.j2
-    dest: /etc/default/ru-iperf-probe
-    mode: "0644"
-    owner: root
-    group: "{{ ru_probe_group }}"
-  tags: [ru_probe]
-
-- name: RU probe | Systemd units
-  ansible.builtin.template:
-    src: ru-iperf-probe.service.j2
-    dest: /etc/systemd/system/ru-iperf-probe.service
-    mode: "0644"
-  tags: [ru_probe]
-
-- name: RU probe | Systemd timer
-  ansible.builtin.template:
-    src: ru-iperf-probe.timer.j2
-    dest: /etc/systemd/system/ru-iperf-probe.timer
-    mode: "0644"
-  tags: [ru_probe]
-
-- name: RU probe | Reload systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
-  tags: [ru_probe]
-
-- name: RU probe | Enable & start timer
-  ansible.builtin.systemd:
-    name: ru-iperf-probe.timer
-    enabled: true
-    state: started
+- name: RU probe | Absent path
+  ansible.builtin.include_tasks: absent.yml
+  when: ru_probe_state | lower == 'absent'
   tags: [ru_probe]

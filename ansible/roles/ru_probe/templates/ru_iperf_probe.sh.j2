@@ -22,11 +22,18 @@ PAR="${PAR:-{{ ru_probe_parallel }}}"
 # отладка функции is_busy (0/1)
 IS_BUSY_DEBUG="${IS_BUSY_DEBUG:-0}"
 
-# цели: "name;wg_ip;iperf_port" — генерируются из vpn_nodes
+# цели: "name;ip;iperf_port"
 TARGETS=(
-{% for n in vpn_nodes
-     if (ru_probe_target_roles | length == 0) or (n.role is defined and (n.role in ru_probe_target_roles)) %}
-"{{ n.name }};{{ n.wg_ip }};{{ n.iperf_port | default(ru_probe_port_default) }}"
+{% for n in _ru_vpn_nodes | default([]) %}
+  "{{
+      n.name
+    }};{{
+      (_name_to_ip.get(n.name) | default('') | trim)
+      if (_name_to_ip.get(n.name) | default('') | trim)
+      else (n.public_ip | default(n.wg_ip))
+    }};{{
+      n.iperf_public_port | default(ru_probe_port_default)
+    }}"
 {% endfor %}
 )
 

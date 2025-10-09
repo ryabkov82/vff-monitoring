@@ -70,7 +70,7 @@
         hub_wg_privkey_runtime: "{{ hub_priv_raw.content | b64decode | trim }}"
       no_log: true
 
-    # === Автосбор pubkey'ев узлов ===
+    # === Автосбор pubkey'ев узлов: VPN-группа ===
     - name: Collect node pubkeys from vpn hosts (if any)
       when: groups['vpn'] is defined and (groups['vpn'] | length) > 0
       ansible.builtin.slurp:
@@ -98,6 +98,40 @@
                 )
             )
           }}
+
+    # === Автосбор pubkey'ев узлов: RU-зонды ===
+    - name: Collect node pubkeys from ru_zondes hosts (if any)
+      when: groups['ru_zondes'] is defined and (groups['ru_zondes'] | length) > 0
+      ansible.builtin.slurp:
+        src: "/etc/wireguard/{{ wg_iface }}.pub"
+      register: ru_pubs
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['ru_zondes'] | default([]) }}"
+      ignore_errors: true
+
+    - name: Build map host -> pubkey (ru_pubmap)
+      when: ru_pubs is defined
+      ansible.builtin.set_fact:
+        ru_pubmap: >-
+          {{
+            dict(
+              ru_pubs.results
+              | selectattr('content', 'defined')
+              | map(attribute='item')
+              | zip(
+                  ru_pubs.results
+                  | selectattr('content', 'defined')
+                  | map(attribute='content')
+                  | map('b64decode')
+                  | map('trim')
+                )
+            )
+          }}
+
+    # === Итоговая карта pubkey'ев: vpn + ru_zondes ===
+    - name: Combine pubkey maps (vpn + ru_zondes)
+      ansible.builtin.set_fact:
+        node_pubmap: "{{ (vpn_pubmap | default({})) | combine(ru_pubmap | default({})) }}"
 
     - name: Render hub config
       ansible.builtin.template:

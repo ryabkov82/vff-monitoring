@@ -1,0 +1,173 @@
+---
+# === iperf3 (public, direct) ===
+
+- name: Iperf3 public | Ensure iperf3 package
+  ansible.builtin.package:
+    name: iperf3
+    state: present
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Deploy templated systemd unit
+  ansible.builtin.template:
+    src: iperf3-public@.service.j2
+    dest: /etc/systemd/system/iperf3-public@.service
+    mode: "0644"
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Effective port for this node
+  ansible.builtin.set_fact:
+    node_iperf_public_port_eff: "{{ (node_iperf_public_port | default(5202)) | int }}"
+  tags: [node, node_iperf, iperf3_public]
+
+# Подстраховка: не пересекаться со старым WG-портом, если тот вдруг включат локально
+- name: Iperf3 public | Assert no port conflict with WG instance
+  when: (node_iperf_enable | default(false)) | bool
+  ansible.builtin.assert:
+    that:
+      - (node_iperf_public_port_eff | int) != (node_iperf_port | default(5201) | int)
+    fail_msg: >
+      node_iperf_public_port ({{ node_iperf_public_port_eff }}) совпадает
+      с node_iperf_port ({{ node_iperf_port | default(5201) }}).
+      Выберите разные порты.
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Enable & start
+  ansible.builtin.systemd:
+    name: "iperf3-public@{{ node_iperf_public_port_eff }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [node, node_iperf, iperf3_public]
+
+# 1) Читаем HostName из локального ssh-конфига для каждого зонда
+- name: Iperf3 public | Read HostName for RU zondes via `ssh -G` (controller)
+  ansible.builtin.shell: |
+    set -o pipefail
+    ssh -G {{ item }} 2>/dev/null | awk 'tolower($1)=="hostname"{print $2; exit}'
+  args:
+    executable: /bin/bash
+  loop: "{{ groups['ru_zondes'] | default([]) }}"
+  delegate_to: localhost
+  run_once: true
+  register: _sshg
+  changed_when: false
+  failed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Init hostname list
+  ansible.builtin.set_fact:
+    _ru_hostnames: []
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Aggregate hostnames from ssh -G
+  ansible.builtin.set_fact:
+    _ru_hostnames: "{{ _ru_hostnames + [item.stdout] }}"
+  loop: "{{ _sshg.results | default([]) }}"
+  when:
+    - item.stdout is defined
+    - (item.stdout | length) > 0
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Ensure hostname list exists
+  when: _ru_hostnames is not defined
+  ansible.builtin.set_fact:
+    _ru_hostnames: []
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Split hostnames into IPv4 and FQDNs
+  ansible.builtin.set_fact:
+    _ru_ips_direct: "{{ _ru_hostnames | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
+    _ru_fqdns: "{{ _ru_hostnames | reject('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Resolve FQDNs to IPv4 via getent
+  when: (_ru_fqdns | length) > 0
+  ansible.builtin.command:
+    cmd: bash -lc 'getent ahostsv4 {{ item }} | awk "{print $1}"'
+  loop: "{{ _ru_fqdns }}"
+  delegate_to: localhost
+  run_once: true
+  register: _getent_v4
+  changed_when: false
+  failed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Build IPv4 list from ssh-config + getent
+  ansible.builtin.set_fact:
+    ru_zondes_sources_from_sshcfg: >-
+      {{
+        (_ru_ips_direct | default([]))
+        + (
+            (_getent_v4.results | default([]))
+            | map(attribute='stdout_lines')
+            | sum(start=[])
+          )
+        | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$')
+        | list | unique
+      }}
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+- name: Iperf3 public | Merge public_ip from vars (if present)
+  vars:
+    _ru_from_vars: >-
+      {{
+        (ru_zondes | default([]))
+        | selectattr('public_ip','defined')
+        | map(attribute='public_ip')
+        | list | unique
+      }}
+  ansible.builtin.set_fact:
+    ru_zondes_sources_all: "{{ (ru_zondes_sources_from_sshcfg | default([])) + _ru_from_vars | unique }}"
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public]
+
+# iptables — только этот бэкенд
+- name: Iptables | Allow iperf3-public from RU zondes
+  when:
+    - firewall_backend == 'iptables'
+    - (ru_zondes_sources_all | default([])) | length > 0
+  ansible.builtin.shell: |
+    set -o pipefail
+    for ip in {{ ru_zondes_sources_all | join(' ') }}; do
+      iptables -C INPUT -s "$ip"/32 -p tcp --dport {{ node_iperf_public_port_eff }} -j ACCEPT 2>/dev/null \
+        || iptables -I INPUT 1 -s "$ip"/32 -p tcp --dport {{ node_iperf_public_port_eff }} -j ACCEPT
+    done
+  args: { executable: /bin/bash }
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+- name: Iptables | Ensure iptables-persistent (Debian/Ubuntu)
+  when: firewall_backend == 'iptables' and ansible_facts.os_family == 'Debian'
+  ansible.builtin.apt:
+    name: iptables-persistent
+    state: present
+    update_cache: true
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+- name: Iptables | Persist rules
+  when: firewall_backend == 'iptables'
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: false
+  tags: [node, node_iperf, iperf3_public, iptables]

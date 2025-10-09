@@ -1,13 +1,19 @@
 # iperf3-server on nodes
-node_iperf_enable: true
+# ====== [OLD] iperf3 over WireGuard (выключено по умолчанию) ======
+node_iperf_enable: false
 node_iperf_port: 5201
 # Биндимся на WG-IP узла (роль node уже вычисляет/берёт wg_ip)
 node_iperf_bind_ip: "{{ wg_ip }}"
 # доп. аргументы iperf3 -s (например: "--one-off" чтобы завершаться после сессии)
 node_iperf_extra_args: ""
-# открыть доступ через ufw только для хаба? (иначе для всей WG-подсети)
-node_iperf_ufw_allow: true
-node_iperf_ufw_from_hub_only: true
+
+# ====== [NEW] iperf3 public (direct) ======
+node_iperf_public_enable: true
+node_iperf_public_port: 5202
+node_iperf_public_allow_ru_only: true
+# (опц.) node_iperf_public_bind_ip: "0.0.0.0"
+
+firewall_backend_override: "iptables"
 
 # где лежит textfile collector
 node_exporter_textfile_dir: /var/lib/node_exporter/textfile

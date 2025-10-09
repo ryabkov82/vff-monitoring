@@ -4,13 +4,22 @@ ListenPort = {{ wg_listen_port }}
 PrivateKey = {{ hub_wg_privkey_runtime }}
 MTU = {{ wg_mtu }}
 
-{% for n in vpn_nodes %}
-{% set node_pub = (vpn_pubmap.get(n.name) if vpn_pubmap is defined else none) | default(n.wg_pubkey | default('')) %}
-{% if node_pub | length > 0 %}
+{# Объединяем описания узлов из vpn_nodes и ru_zondes #}
+{% set all_nodes = (vpn_nodes | default([])) + (ru_zondes | default([])) %}
+
+{% for n in all_nodes %}
+{% set node_pub =
+    (node_pubmap.get(n.name) if node_pubmap is defined else none)
+    | default(n.wg_pubkey | default(''))
+%}
+{% set node_ip = n.wg_ip | default('') %}
+
+{# Пропускаем, если нет IP, нет ключа или это сам хаб #}
+{% if node_ip and (node_pub | length > 0) and (node_ip != hub_wg_ip) %}
 [Peer]
 # {{ n.name }}
 PublicKey = {{ node_pub }}
-AllowedIPs = {{ n.wg_ip }}/32
+AllowedIPs = {{ node_ip }}/32
 PersistentKeepalive = 25
 {% endif %}
 {% endfor %}

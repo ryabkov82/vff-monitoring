@@ -5,7 +5,7 @@ ru_probe_user: "{{ node_exporter_user | default('node_exporter') }}"
 ru_probe_group: "{{ node_exporter_group | default('node_exporter') }}"
 
 # iperf3 клиентские настройки
-ru_probe_port_default: 5201
+ru_probe_port_default: "{{ node_iperf_public_port | default(5202) }}"
 ru_probe_duration: 10         # секунд
 ru_probe_parallel: 1
 
@@ -28,3 +28,12 @@ ru_probe_target_roles: []     # например: ["vpn"] — пусто = бе�
 ru_probe_curl_timeout: 3
 ru_probe_connect_timeout: 2
 ru_probe_hard_timeout: 15
+
+# present | absent
+ru_probe_state: present
+
+# Что удалить при absent
+ru_probe_remove_units: true
+ru_probe_remove_script: true
+ru_probe_remove_env: true
+ru_probe_clean_textfile: true

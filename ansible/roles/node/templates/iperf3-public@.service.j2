@@ -1,0 +1,15 @@
+[Unit]
+Description=iperf3 public TCP server on %i (direct)
+Documentation=man:iperf3(1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/iperf3 -s -p %i{% if node_iperf_public_bind_ip|default('') %} -B {{ node_iperf_public_bind_ip }}{% endif %}{% if node_iperf_public_extra_args|default('') %} {{ node_iperf_public_extra_args }}{% endif %}
+Restart=on-failure
+RestartSec=3s
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
