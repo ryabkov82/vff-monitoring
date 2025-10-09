@@ -143,23 +143,69 @@
   changed_when: false
   tags: [node, node_iperf, iperf3_public]
 
-# iptables — только этот бэкенд
-- name: Iptables | Allow iperf3-public from RU zondes
-  when:
-    - firewall_backend == 'iptables'
-    - (ru_zondes_sources_all | default([])) | length > 0
+# === iptables hardening для iperf3-public порта ===
+
+- name: Iptables | Ensure RU zondes IP list variable exists
+  ansible.builtin.set_fact:
+    ru_zondes_sources_all: "{{ ru_zondes_sources_all | default([]) }}"
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+# 1) Создать цепочку IPERF3 (если нет)
+- name: Iptables | Ensure IPERF3 chain exists
   ansible.builtin.shell: |
-    set -o pipefail
-    for ip in {{ ru_zondes_sources_all | join(' ') }}; do
-      iptables -C INPUT -s "$ip"/32 -p tcp --dport {{ node_iperf_public_port_eff }} -j ACCEPT 2>/dev/null \
-        || iptables -I INPUT 1 -s "$ip"/32 -p tcp --dport {{ node_iperf_public_port_eff }} -j ACCEPT
-    done
+    iptables -N IPERF3 2>/dev/null || true
   args: { executable: /bin/bash }
   changed_when: false
   tags: [node, node_iperf, iperf3_public, iptables]
 
+# 2) Очистить цепочку (пересоберём правила с нуля)
+- name: Iptables | Flush IPERF3 chain
+  ansible.builtin.command: iptables -F IPERF3
+  changed_when: false
+  failed_when: false
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+# 3) Вставить jump из INPUT ВВЕРХ (позиция 1). Сначала удалим все старые jump'ы, затем вставим.
+- name: Iptables | Remove existing INPUT jumps to IPERF3 for this port
+  ansible.builtin.shell: |
+    set -e
+    # Удаляем все совпадения, если они есть, чтобы потом вставить один наверх
+    while iptables -C INPUT -p tcp --dport {{ node_iperf_public_port_eff }} -j IPERF3 2>/dev/null; do
+      iptables -D INPUT -p tcp --dport {{ node_iperf_public_port_eff }} -j IPERF3
+    done
+  args: { executable: /bin/bash }
+  changed_when: false
+  failed_when: false
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+- name: Iptables | Insert top INPUT jump to IPERF3 for this port
+  ansible.builtin.shell: |
+    iptables -I INPUT 1 -p tcp --dport {{ node_iperf_public_port_eff }} -j IPERF3
+  args: { executable: /bin/bash }
+  changed_when: true
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+# 4) Разрешить RU-зонд(ы)
+- name: Iptables | Add ACCEPT rules for RU zondes
+  ansible.builtin.shell: |
+    iptables -A IPERF3 -s {{ item }}/32 -j ACCEPT
+  args: { executable: /bin/bash }
+  loop: "{{ ru_zondes_sources_all }}"
+  when: (ru_zondes_sources_all | length) > 0
+  changed_when: true
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+# 5) Финальный DROP для всех остальных
+- name: Iptables | Ensure final DROP in IPERF3
+  ansible.builtin.shell: |
+    iptables -A IPERF3 -j DROP
+  args: { executable: /bin/bash }
+  changed_when: true
+  tags: [node, node_iperf, iperf3_public, iptables]
+
+# 6) Сделать правила постоянными
 - name: Iptables | Ensure iptables-persistent (Debian/Ubuntu)
-  when: firewall_backend == 'iptables' and ansible_facts.os_family == 'Debian'
+  when: ansible_facts.os_family == 'Debian'
   ansible.builtin.apt:
     name: iptables-persistent
     state: present
@@ -167,7 +213,7 @@
   tags: [node, node_iperf, iperf3_public, iptables]
 
 - name: Iptables | Persist rules
-  when: firewall_backend == 'iptables'
   ansible.builtin.command: netfilter-persistent save
   changed_when: false
+  failed_when: false
   tags: [node, node_iperf, iperf3_public, iptables]
