@@ -1,21 +1,30 @@
----
-- name: WireGuard facts | Lookup vpn_nodes entry for this host
+# Собираем единый каталог описаний узлов: vpn_nodes + ru_zondes
+- name: WireGuard facts | Build unified nodes catalog
+  ansible.builtin.set_fact:
+    wg_nodes_catalog: "{{ (vpn_nodes | default([])) + (ru_zondes | default([])) }}"
+  tags: [wireguard, wg_facts]
+
+# Находим запись для текущего хоста по имени inventory_hostname (если есть)
+- name: WireGuard facts | Lookup node entry by inventory_hostname in catalog
   ansible.builtin.set_fact:
     wireguard_node_entry: >-
       {{
-        (vpn_nodes | default([]) | selectattr('name', 'equalto', inventory_hostname) | list | first)
+        wg_nodes_catalog
+        | selectattr('name','equalto', inventory_hostname)
+        | list
+        | first
+        | default(None)
       }}
-  when:
-    - vpn_nodes is defined
-    - wireguard_node_entry is not defined
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Derive wg_ip from entry
+# Если wg_ip уже задан (hosts.ini/host_vars) — уважаем его и не трогаем
+# Иначе пробуем взять wg_ip из найденной записи
+- name: WireGuard facts | Derive wg_ip from entry (if not set)
   ansible.builtin.set_fact:
     wg_ip: "{{ wireguard_node_entry.wg_ip }}"
   when:
     - wg_ip is not defined
-    - wireguard_node_entry is defined
+    - wireguard_node_entry is not none
     - wireguard_node_entry.wg_ip is defined
   tags: [wireguard, wg_facts]
 

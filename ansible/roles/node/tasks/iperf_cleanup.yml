@@ -1,0 +1,35 @@
+---
+# Остановить и отключить WG-экземпляр iperf3 (если был)
+- name: WG iperf | Stop & disable iperf3@{{ node_iperf_port | default(5201) }}
+  ansible.builtin.systemd:
+    name: "iperf3@{{ node_iperf_port | default(5201) }}"
+    state: stopped
+    enabled: false
+    masked: true
+  register: _wg_iperf_sd
+  failed_when: false                # не падаем, если юнита не было/уже остановлен
+  changed_when: >
+    (_wg_iperf_sd is defined) and
+    ( (_wg_iperf_sd.changed | default(false)) or
+      (_wg_iperf_sd.state | default('') not in ['stopped']) or
+      (_wg_iperf_sd.enabled | default(true)) )
+
+# Проверяем, установлен ли UFW
+- name: WG iperf | Detect ufw
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: iperf_wg_ufw
+
+# Удалить правило allow на старый WG-порт (если UFW есть)
+- name: WG iperf | Remove UFW allow (tcp/{{ node_iperf_port | default(5201) }})
+  when: iperf_wg_ufw.stat.exists
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ node_iperf_port | default(5201) }}"
+    delete: true
+  register: _wg_ufw_del
+  failed_when: false                # не падаем, если правила не было
+  changed_when: >
+    (_wg_ufw_del is defined) and
+    (_wg_ufw_del.changed | default(false))

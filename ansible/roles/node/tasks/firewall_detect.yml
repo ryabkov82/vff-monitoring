@@ -1,0 +1,9 @@
+- name: FW | Default backend (iptables) unless override/external
+  ansible.builtin.set_fact:
+    firewall_backend: >-
+      {{
+        (firewall_backend_override | lower)
+        if (firewall_backend_override | default('') | length > 0)
+        else 'iptables'
+      }}
+  tags: [node, firewall, firewall_detect, node_iperf, iperf3_public, iperf3, iperf3_cleanup]

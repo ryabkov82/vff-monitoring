@@ -16,7 +16,7 @@ alertmanager_port: 9093
 grafana_port: 3000
 blackbox_port: 9115
 
-prometheus_tsdb_retention_time: "7d"
+prometheus_tsdb_retention_time: "30d"
 
 wg_iface: wgmon0
 wg_listen_port: 51821
@@ -78,6 +78,15 @@ vpn_nodes:
     reality:
       e2e_enabled: true
       sni: "www.cloudflare.com"
+  - name: "de-fra-2"
+    instance: "10.77.0.8:9100"
+    wg_ip: "10.77.0.8"
+    role: "vpn"
+    uplink_device: "ens3"
+    uplink_speed_bps: 10000000000
+    reality:
+      e2e_enabled: true
+      sni: "www.cloudflare.com"
   # - name: "DE-1"
   #   instance: "10.66.0.3:9100"
   #   role: "vpn"
@@ -86,6 +95,20 @@ vpn_nodes:
 ru_probe_enabled: true
 ru_probe_schedule_hours: [3,9,15,21]
 ru_probe_random_delay_sec: 900
+
+ru_zondes:
+  - name: "ru-msk-1"
+    instance: "10.77.0.100:9100"   # адрес node_exporter этой машины по WG
+    wg_ip: "10.77.0.100"
+    role: "probe"
+    labels:
+      name: "RU-probe (msk-1)"
+ # - name: "monitoring-hub"
+ #   instance: "10.77.0.1:9100"   # адрес node_exporter этой машины по WG
+ #   wg_ip: "10.77.0.1"
+ #   role: "probe"
+ #   labels:
+ #     name: "RU-probe (hub)"
 
 # Marzban exporter
 marzban_exporter_enabled: true

@@ -3,7 +3,22 @@
 #   make hub ANSIBLE_FLAGS=--ask-vault-pass
 ANSIBLE        ?= ansible-playbook
 INVENTORY      ?= ansible/hosts.ini
-PLAY           ?= ansible/site.yml
+
+PLAY_SITE ?= ansible/site.yml
+PLAY_HUB  ?= ansible/playbooks/hub.yml
+PLAY_VPN  ?= ansible/playbooks/vpn.yml
+PLAY_RUZ  ?= ansible/playbooks/ru_zondes.yml
+
+ifeq ($(SCOPE),hub)
+  PLAY := $(PLAY_HUB)
+else ifeq ($(SCOPE),vpn)
+  PLAY := $(PLAY_VPN)
+else ifeq ($(SCOPE),ru)
+  PLAY := $(PLAY_RUZ)
+else
+  PLAY ?= $(PLAY_SITE)
+endif
+
 ANSIBLE_FLAGS  ?=
 
 # Где лежит docker compose стек на хабе.
@@ -216,6 +231,30 @@ endif
 node-if-speed-vpn: ## Опубликовать/обновить if_speed_bps на всей группе vpn
 	@# Пример: make node-if-speed-vpn
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags node_if_speed $(ANSIBLE_FLAGS)
+
+# --- public iperf3 (direct) ---
+node-iperf-public: ## Установить/обновить public iperf3 на HOST (direct; UFW ограничит до RU-зондов)
+	@# Пример: make node-iperf-public HOST=nl-ams-2
+ifndef HOST
+	$(error Usage: make node-iperf-public HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit $(HOST) --tags iperf3_public $(ANSIBLE_FLAGS)
+
+node-iperf-public-vpn: ## Установить/обновить public iperf3 на всей группе vpn
+	@# Пример: make node-iperf-public-vpn
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit vpn --tags iperf3_public $(ANSIBLE_FLAGS)
+
+node-iperf-public-check: ## Проверка: юнит, порт, iptables, логи
+	@# Пример: make node-iperf-public-check HOST=nl-ams-1 [PORT=5202]
+ifndef HOST
+	$(error Usage: make node-iperf-public-check HOST=<hostname> [PORT=5202])
+endif
+	@PORT=$${PORT:-5202}; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl is-active iperf3-public@'$$PORT $(ANSIBLE_FLAGS); \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl is-enabled iperf3-public@'$$PORT $(ANSIBLE_FLAGS) || true; \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'ss -ltnp | grep ":'$$PORT' " || true' $(ANSIBLE_FLAGS); \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'iptables -S | egrep "INPUT|5201|'$$PORT'" || true' $(ANSIBLE_FLAGS); \
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u iperf3-public@'$$PORT' -n 50 --no-pager || true' $(ANSIBLE_FLAGS)
 
 # ---------------------------
 # IPERF3: проверки на узле
@@ -471,31 +510,135 @@ prom-reload: ## Горячая перезагрузка Prometheus (нужен -
 	@# Пример: make prom-reload
 	curl -fsS -X POST http://127.0.0.1:9090/-/reload || true
 
-# ---------------------------
-# RU IPERF3 ПРОБА (на хабе)
-# ---------------------------
-.PHONY: ru-probe ru-probe-run ru-probe-status ru-probe-logs ru-probe-metrics
+# -------------------------------------------------
+# Полная настройка RU-зондов (wg_node + node_exporter + ru_probe)
+# -------------------------------------------------
+PLAY_RUZ ?= ansible/playbooks/ru_zondes.yml
 
-ru-probe: ## Применить роль ru_probe на хабе (скрипт, юниты, таймер)
-	@# Пример: make ru-probe
-	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags ru_probe $(ANSIBLE_FLAGS)
+.PHONY: ru-zondes-setup ru-zondes-setup-host
 
-ru-probe-run: ## Запустить разово RU iperf3 probe прямо сейчас
-	@# Пример: make ru-probe-run
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
+ru-zondes-setup-host: ## Все роли на одном зонде HOST, затем обновить iptables на VPN-нoded, WG-хаб и Prometheus targets/rules
+	@# Пример: make ru-zondes-setup-host HOST=monitoring-hub
+ifndef HOST
+	$(error Usage: make ru-zondes-setup-host HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	@echo ">> [1/4] RU zonde on $(HOST)"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_RUZ) --limit $(HOST) $(ANSIBLE_FLAGS) && \
+	echo ">> [2/4] Refresh iptables on VPN nodes for public iperf" && \
+	$(MAKE) node-iperf-public-vpn && \
+	echo ">> [3/4] Update WG peers on hub" && \
+	$(MAKE) wg-hub && \
+	echo ">> [4/4] Render Prometheus targets/rules" && \
+	$(MAKE) prom-rules
 
-ru-probe-status: ## Показать статус таймера/сервиса RU iperf3 probe
-	@# Пример: make ru-probe-status
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
-	ansible -i $(INVENTORY) hub -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
+ru-zondes-setup: ## Все роли на всей группе ru_zondes, затем обновить iptables на VPN-нoded, WG-хаб и Prometheus targets/rules
+	@# Пример: make ru-zondes-setup
+	@echo ">> [1/4] RU zondes on group ru_zondes"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_RUZ) --limit ru_zondes $(ANSIBLE_FLAGS) && \
+	echo ">> [2/4] Refresh iptables on VPN nodes for public iperf" && \
+	$(MAKE) node-iperf-public-vpn && \
+	echo ">> [3/4] Update WG peers on hub" && \
+	$(MAKE) wg-hub && \
+	echo ">> [4/4] Render Prometheus targets/rules" && \
+	$(MAKE) prom-rules
 
-ru-probe-logs: ## Показать логи последнего запуска RU iperf3 probe (TAIL=200)
-	@# Пример: make ru-probe-logs TAIL=500
-	ansible -i $(INVENTORY) hub -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
+# -------------------------------------------------
+# RU IPERF3 ПРОБА (ru_zondes)
+# -------------------------------------------------
+.PHONY: ru-probe ru-probe-zondes ru-probe-run ru-probe-run-zondes \
+        ru-probe-status ru-probe-status-zondes ru-probe-logs ru-probe-logs-zondes \
+        ru-probe-metrics ru-probe-metrics-zondes
 
-ru-probe-metrics: ## Показать опубликованные метрики RU iperf3 (если уже есть)
-	@# Пример: make ru-probe-metrics
-	ansible -i $(INVENTORY) hub -m shell -a 'f=$(TEXTFILE_DIR)/ru_iperf.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "no metrics yet"' $(ANSIBLE_FLAGS)
+ru-probe: ## Применить роль ru_probe на HOST (зонде)
+	@# Пример: make ru-probe HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-probe HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_RUZ) --limit $(HOST) --tags ru_probe $(ANSIBLE_FLAGS)
+
+ru-probe-zondes: ## Применить роль ru_probe на всей группе ru_zondes
+	@# Пример: make ru-probe-zondes
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_RUZ) --limit ru_zondes --tags ru_probe $(ANSIBLE_FLAGS)
+
+# Разовый запуск сервиса пробы
+ru-probe-run: ## Запустить RU iperf3 probe сейчас на HOST
+	@# Пример: make ru-probe-run HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-probe-run HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
+
+ru-probe-run-zondes: ## Запустить RU iperf3 probe сейчас на всей группе ru_zondes
+	@# Пример: make ru-probe-run-zondes
+	ansible -i $(INVENTORY) ru_zondes -m shell -a 'systemctl start ru-iperf-probe.service' $(ANSIBLE_FLAGS)
+
+# Статусы
+ru-probe-status: ## Показать статус таймера/сервиса RU iperf3 probe на HOST
+	@# Пример: make ru-probe-status HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-probe-status HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
+
+ru-probe-status-zondes: ## Показать статус таймера/сервиса на всей группе ru_zondes
+	@# Пример: make ru-probe-status-zondes
+	ansible -i $(INVENTORY) ru_zondes -m shell -a 'systemctl status --no-pager ru-iperf-probe.timer' $(ANSIBLE_FLAGS)
+	ansible -i $(INVENTORY) ru_zondes -m shell -a 'systemctl status --no-pager ru-iperf-probe.service' $(ANSIBLE_FLAGS) || true
+
+# Логи
+ru-probe-logs: ## Показать логи последнего запуска RU iperf3 probe на HOST (TAIL=200)
+	@# Пример: make ru-probe-logs HOST=ru-msk-1 [TAIL=500]
+ifndef HOST
+	$(error Usage: make ru-probe-logs HOST=<hostname> [TAIL=200] [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
+
+ru-probe-logs-zondes: ## Показать логи RU iperf3 probe на всей группе ru_zondes (TAIL=200)
+	@# Пример: make ru-probe-logs-zondes [TAIL=500]
+	ansible -i $(INVENTORY) ru_zondes -m shell -a 'journalctl -u ru-iperf-probe.service -n $(TAIL) --no-pager' $(ANSIBLE_FLAGS)
+
+# Опубликованные метрики
+ru-probe-metrics: ## Показать опубликованные метрики RU iperf3 на HOST
+	@# Пример: make ru-probe-metrics HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-probe-metrics HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	ansible -i $(INVENTORY) $(HOST) -m shell -a 'f=$${TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}/ru_iperf.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "no metrics yet"' $(ANSIBLE_FLAGS)
+
+ru-probe-metrics-zondes: ## Показать опубликованные метрики RU iperf3 на всей группе ru_zondes
+	@# Пример: make ru-probe-metrics-zondes
+	ansible -i $(INVENTORY) ru_zondes -m shell -a 'f=$${TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}/ru_iperf.prom; test -f $$f && (echo "# $$f"; cat $$f) || echo "no metrics yet"' $(ANSIBLE_FLAGS)
+
+# -----------------------------------------
+# ДЕИНСТАЛЛЯЦИЯ RU-ПРОБЫ НА ЗОНДАХ
+# -----------------------------------------
+PLAY_RUZ ?= ansible/playbooks/ru_zondes.yml
+
+.PHONY: ru-probe-uninstall-host ru-zonde-finalize ru-zonde-remove-host
+
+ru-probe-uninstall-host: ## Шаг 1: деинсталляция ru_probe на HOST (останавливает тесты)
+	@# Пример: make ru-probe-uninstall-host HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-probe-uninstall-host HOST=<hostname>)
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_RUZ) --limit $(HOST) --tags ru_probe -e ru_probe_state=absent $(ANSIBLE_FLAGS)
+
+ru-zonde-finalize: ## Шаг 3: пересборка WG на хабе и правил/таргетов Prometheus
+	@# Пример: make ru-zonde-finalize
+	$(MAKE) wg-hub && $(MAKE) prom-rules
+
+ru-zonde-remove-host: ## Комфортная обёртка: шаг1 -> ПАУЗА (удалите хост вручную) -> шаг3 (по ru-zonde-finalize)
+	@# Пример: make ru-zonde-remove-host HOST=ru-msk-1
+ifndef HOST
+	$(error Usage: make ru-zonde-remove-host HOST=<hostname>)
+endif
+	@echo ">> [1/3] Uninstall ru_probe on $(HOST)"
+	$(MAKE) ru-probe-uninstall-host HOST=$(HOST) $(if $(ANSIBLE_FLAGS),ANSIBLE_FLAGS="$(ANSIBLE_FLAGS)",)
+	@echo ">> [2/3] Now remove $(HOST) from [ru_zondes] in ansible/hosts.ini and from ru_zondes in ansible/group_vars/all.yml"
+	@echo ">> [3/3] When done, run:"
+	@echo "          make ru-zonde-finalize"
+
 
 # === sing-box (утилита для REALITY E2E) ======================================
 .PHONY: sing-box sing-box-version
@@ -571,3 +714,17 @@ ifndef PROFILE
 	$(error Usage: make reality-e2e-timer-stop PROFILE=<profile_name>)
 endif
 	ansible -i $(INVENTORY) hub -m systemd -a 'name=reality-e2e@$(PROFILE).timer enabled=no state=stopped' $(ANSIBLE_FLAGS)
+
+
+.PHONY: iperf-wg-disable-host iperf-wg-disable-vpn
+
+iperf-wg-disable-host: ## Остановить/отключить iperf3@WG_PORT на HOST (WG-экземпляр)
+	@# Пример: make iperf-wg-disable-host HOST=nl-ams-1
+ifndef HOST
+	$(error Usage: make iperf-wg-disable-host HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_VPN) --limit $(HOST) --tags iperf3_cleanup $(ANSIBLE_FLAGS)
+
+iperf-wg-disable-vpn: ## Остановить/отключить iperf3@WG_PORT на всей группе vpn
+	@# Пример: make iperf-wg-disable-vpn
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_VPN) --limit vpn --tags iperf3_cleanup $(ANSIBLE_FLAGS)

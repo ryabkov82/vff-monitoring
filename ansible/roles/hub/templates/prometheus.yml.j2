@@ -68,6 +68,25 @@ scrape_configs:
     file_sd_configs:
       - files: ["/etc/prometheus/targets/ru-probe.json"]
         refresh_interval: 30s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'ru_probe_.*'
+        action: keep
+
+  # ---- Reality E2E — метрики собираются НА ХАБЕ через node_exporter ----
+  - job_name: 'reality-e2e'
+    honor_labels: true
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "{{ hostvars[groups['hub'][0]].hub_wg_ip | default(hub_wg_ip) }}:9100"
+        labels:
+          role: "reality_e2e"
+          name: "REALITY E2E (hub)"
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'reality_e2e_.*'
+        action: keep
 
 {% if marzban_exporter_enabled | bool %}
   - job_name: "marzban_exporter"

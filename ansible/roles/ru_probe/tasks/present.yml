@@ -1,0 +1,132 @@
+---
+- name: RU probe | Install deps
+  ansible.builtin.apt:
+    name: [iperf3, jq, curl]
+    state: present
+    update_cache: true
+  tags: [ru_probe]
+
+# === Сбор публичных IP узлов через ssh -G + getent ===
+
+- name: RU probe | Seed node list (no role filter)
+  ansible.builtin.set_fact:
+    _ru_vpn_nodes: "{{ vpn_nodes | default([]) }}"
+  tags: [ru_probe]
+
+- name: RU probe | Apply role filter if provided
+  ansible.builtin.set_fact:
+    _ru_vpn_nodes: >-
+      {{
+        _ru_vpn_nodes
+        | selectattr('name','defined')
+        | selectattr('wg_ip','defined')
+        | selectattr('role','defined')
+        | selectattr('role','in', ru_probe_target_roles | default([]))
+        | list
+      }}
+  when: (ru_probe_target_roles | default([]) | length) > 0
+  tags: [ru_probe]
+
+- name: RU probe | Read HostName from local ssh config (ssh -G)
+  ansible.builtin.shell: |
+    set -o pipefail
+    ssh -G {{ item.name }} 2>/dev/null | awk 'tolower($1)=="hostname"{print $2; exit}'
+  args: { executable: /bin/bash }
+  loop: "{{ _ru_vpn_nodes }}"
+  register: _sshg_nodes
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  failed_when: false
+  tags: [ru_probe]
+
+# На каждый узел: если stdout — IP, берём его; иначе резолвим FQDN -> IPv4
+- name: RU probe | Resolve per-node host to IPv4
+  ansible.builtin.shell: |
+    set -o pipefail
+    host="{{ item.stdout | trim }}"
+    if echo "$host" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+      echo "$host"
+    elif [ -n "$host" ]; then
+      getent ahostsv4 "$host" | awk '{print $1; exit}'
+    else
+      echo ""
+    fi
+  args: { executable: /bin/bash }
+  loop: "{{ _sshg_nodes.results | default([]) }}"
+  register: _pernode_ip
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  failed_when: false
+  tags: [ru_probe]
+
+# Собираем map: nodename -> IPv4 (может быть пустая строка, тогда в шаблоне сработает фолбэк)
+- name: RU probe | Build map nodename -> public IPv4 (from ssh-config/getent)
+  ansible.builtin.set_fact:
+    _name_to_ip: >-
+      {{
+        dict(
+          (_pernode_ip.results | default([]))
+          | map(attribute='item')
+          | map(attribute='item')
+          | map(attribute='name')
+          | list
+          |
+          zip(
+            (_pernode_ip.results | default([]))
+            | map(attribute='stdout')
+            | list
+          )
+        )
+      }}
+  delegate_to: localhost
+  run_once: true
+  changed_when: false
+  tags: [ru_probe]
+
+# === Деплой скриптов и юнитов ===
+
+- name: RU probe | Install script
+  ansible.builtin.template:
+    src: ru_iperf_probe.sh.j2
+    dest: /usr/local/bin/ru_iperf_probe.sh
+    mode: "0755"
+    owner: root
+    group: "{{ ru_probe_group }}"
+  tags: [ru_probe]
+
+- name: RU probe | Drop env file (optional overrides)
+  ansible.builtin.template:
+    src: ru-iperf-probe.env.j2
+    dest: /etc/default/ru-iperf-probe
+    mode: "0644"
+    owner: root
+    group: "{{ ru_probe_group }}"
+  tags: [ru_probe]
+
+- name: RU probe | Systemd units
+  ansible.builtin.template:
+    src: ru-iperf-probe.service.j2
+    dest: /etc/systemd/system/ru-iperf-probe.service
+    mode: "0644"
+  tags: [ru_probe]
+
+- name: RU probe | Systemd timer
+  ansible.builtin.template:
+    src: ru-iperf-probe.timer.j2
+    dest: /etc/systemd/system/ru-iperf-probe.timer
+    mode: "0644"
+  tags: [ru_probe]
+
+- name: RU probe | Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [ru_probe]
+
+- name: RU probe | Enable & start timer
+  ansible.builtin.systemd:
+    name: ru-iperf-probe.timer
+    enabled: true
+    state: started
+  tags: [ru_probe]

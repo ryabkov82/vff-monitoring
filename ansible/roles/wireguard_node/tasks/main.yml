@@ -1,128 +1,14 @@
----
-- name: Configure WireGuard node
-  tags: [wg]
-  block:
-    - name: Install wireguard tools
-      ansible.builtin.apt:
-        name: [wireguard, wireguard-tools]
-        state: present
-        update_cache: true
-      when: ansible_facts.pkg_mgr == 'apt'
+- name: Detect if current host is the hub
+  ansible.builtin.set_fact:
+    is_hub: "{{ inventory_hostname in (groups['hub'] | default([])) }}"
 
-    - name: Ensure /etc/wireguard exists
-      ansible.builtin.file:
-        path: /etc/wireguard
-        state: directory
-        mode: "0750"
-        owner: root
-        group: root
+# На хабе — ничего не трогаем в WG (но оставляем возможность расширить поведение позже)
+- name: Skipping wireguard_node on hub
+  ansible.builtin.debug:
+    msg: "wireguard_node: skip mutating WG config on hub {{ inventory_hostname }}"
+  when: is_hub | bool
 
-    - name: Generate node keypair if missing (private+public)
-      ansible.builtin.shell: |
-        set -euo pipefail
-        umask 077
-        wg genkey | tee /etc/wireguard/{{ wg_iface }}.key | wg pubkey > /etc/wireguard/{{ wg_iface }}.pub
-      args:
-        creates: "/etc/wireguard/{{ wg_iface }}.key"
-        executable: /bin/bash
-      no_log: true
-
-    - name: Ensure key file permissions
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        mode: "{{ item.mode }}"
-        owner: root
-        group: root
-      loop:
-        - { path: "/etc/wireguard/{{ wg_iface }}.key", mode: "0600" }
-        - { path: "/etc/wireguard/{{ wg_iface }}.pub", mode: "0644" }
-
-    - name: Slurp node public key to controller (fact)
-      ansible.builtin.slurp:
-        src: "/etc/wireguard/{{ wg_iface }}.pub"
-      register: node_pub_raw
-
-    - name: Set fact with node pubkey (base64->string)
-      ansible.builtin.set_fact:
-        node_wg_pubkey: "{{ node_pub_raw.content | b64decode | trim }}"
-
-    - name: WireGuard | Consolidate host facts
-      ansible.builtin.import_role:
-        name: wireguard_facts
-      tags:
-        - wg
-        - wireguard
-        - wg_facts
-
-    - name: Assert wg_ip is defined for this node
-      ansible.builtin.assert:
-        that:
-          - wg_ip is defined
-          - (wg_ip | ansible.utils.ipaddr) is not none
-        fail_msg: "wg_ip не задан для {{ inventory_hostname }}. Задай wg_ip в hosts.ini/host_vars или в vpn_nodes."
-
-    - name: Slurp node private key (remote)
-      ansible.builtin.slurp:
-        src: "/etc/wireguard/{{ wg_iface }}.key"
-      register: node_priv_raw
-      no_log: true
-
-    - name: Set fact with node private key
-      ansible.builtin.set_fact:
-        node_wg_privkey: "{{ node_priv_raw.content | b64decode | trim }}"
-      no_log: true
-
-    # Читаем pubkey хаба напрямую с хаба (делегированно)
-    - name: Read hub public key from hub (delegated)
-      ansible.builtin.slurp:
-        src: "/etc/wireguard/{{ wg_iface }}.pub"
-      register: hub_pub_from_host
-      delegate_to: "{{ groups['hub'][0] }}"
-      ignore_errors: true
-
-    # Выбираем исходный ключ: прочитанный с хаба или статическую переменную
-    - name: Select effective hub public key
-      ansible.builtin.set_fact:
-        hub_wg_pubkey_effective: >-
-          {{
-            (hub_pub_from_host is defined and (hub_pub_from_host.content | default('')) | length > 0)
-            | ternary(hub_pub_from_host.content | b64decode | trim, hub_wg_pubkey | default(''))
-          }}
-
-    - name: Assert hub public key is available
-      ansible.builtin.assert:
-        that:
-          - hub_wg_pubkey_effective is defined
-          - (hub_wg_pubkey_effective | length) > 0
-        fail_msg: >-
-          Hub public key is unknown. Ensure hub is reachable and has /etc/wireguard/{{ wg_iface }}.pub,
-          or define 'hub_wg_pubkey' in vars.
-
-    - name: Pick hub host for node template
-      ansible.builtin.set_fact:
-        hub_host_effective: >-
-          {{
-            hub_host
-              | default( (groups['hub'][0]) if (groups['hub'] is defined and (groups['hub']|length)>0) else omit )
-          }}
-
-    - name: Assert we have a hub host
-      ansible.builtin.assert:
-        that:
-          - hub_host_effective is defined
-        fail_msg: >-
-          Cannot determine hub host. Define inventory group 'hub' with at least one host
-          or set variable 'hub_host' to a specific hostname.
-
-    - name: Render node config
-      ansible.builtin.template:
-        src: wg-node.conf.j2
-        dest: "/etc/wireguard/{{ wg_iface }}.conf"
-        mode: "0600"
-      notify: Restart wg-quick
-
-    - name: Enable + start wg interface
-      ansible.builtin.systemd:
-        name: "wg-quick@{{ wg_iface }}"
-        enabled: true
-        state: started
+# На НЕ-хабах выполняем обычную «узловую» конфигурацию WG
+- name: Configure WG node (non-hub)
+  ansible.builtin.import_tasks: node.yml
+  when: not is_hub | bool

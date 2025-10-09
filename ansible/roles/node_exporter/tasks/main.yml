@@ -1,11 +1,17 @@
 ---
-- name: WireGuard | Consolidate host facts
-  ansible.builtin.import_role:
-    name: wireguard_facts
-  tags:
-    - node_exporter
-    - wireguard
-    - wg_facts
+- name: Derive wg_ip locally
+  vars:
+    _matches: "{{ vpn_nodes | default([]) | selectattr('name', 'equalto', inventory_hostname) | list }}"
+    _raw: >-
+      {{
+        hub_wg_ip
+          | default((_matches | first).wg_ip if (_matches | length > 0) else omit, true)
+      }}
+  ansible.builtin.set_fact:
+    # берём строку и отрезаем маску, если была (10.77.0.1/24 -> 10.77.0.1)
+    wg_ip: "{{ (_raw | string).split('/')[0] }}"
+  when: wg_ip is not defined
+  tags: [node_exporter]
 
 - name: Install and run node_exporter (single @instance on WG IP)
   tags: [node_exporter]
@@ -68,18 +74,22 @@
         - name: Download node_exporter archive
           ansible.builtin.get_url:
             url: >-
-              {{
-                'https://github.com/prometheus/node_exporter/releases/download/v'
+              {{ 'https://github.com/prometheus/node_exporter/releases/download/v'
                 ~ node_exporter_version
                 ~ '/node_exporter-'
                 ~ node_exporter_version
                 ~ '.'
                 ~ node_exporter_arch
-                ~ '.tar.gz'
-              }}
+                ~ '.tar.gz' }}
             dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
             mode: "0644"
+            timeout: 60
+            headers:
+              User-Agent: "curl/8.x ansible"
           register: dl_ne
+          until: dl_ne is succeeded
+          retries: 4
+          delay: 10
 
         - name: Unpack node_exporter
           ansible.builtin.unarchive:

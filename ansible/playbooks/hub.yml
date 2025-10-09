@@ -1,0 +1,10 @@
+- name: Hub (monitoring server)
+  hosts: hub
+  roles:
+    - { role: wireguard_hub, tags: [wg, wg_hub] }
+    - { role: docker, when: docker_install | bool, tags: [docker] }
+    - { role: node_exporter, tags: [node_exporter], vars: { wg_ip: "{{ hub_wg_ip }}" } }
+    - { role: nginx, tags: [nginx] }
+    - { role: hub, tags: [hub] }
+    - { role: sing_box, tags: [sing_box] }
+    - { role: reality_e2e, when: reality_e2e_enabled | bool, tags: [reality_e2e] }

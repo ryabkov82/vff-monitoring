@@ -1,0 +1,7 @@
+- name: VPN nodes
+  hosts: vpn
+  roles:
+    - { role: wireguard_node, tags: [wg, wg_node] }
+    - { role: node_exporter, tags: [node_exporter] }
+    - { role: node, tags: [node] }
+    - { role: speedtest_ookla, tags: [speedtest_ookla] }

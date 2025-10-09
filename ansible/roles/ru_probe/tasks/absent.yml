@@ -1,0 +1,42 @@
+---
+- name: RU probe | Stop & disable timer/service
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop:
+    - ru-iperf-probe.timer
+    - ru-iperf-probe.service
+  failed_when: false
+
+- name: RU probe | Remove textfile metrics
+  when: ru_probe_clean_textfile | bool
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}/ru_iperf.prom"
+    state: absent
+
+- name: RU probe | Remove env
+  when: ru_probe_remove_env | bool
+  ansible.builtin.file:
+    path: /etc/default/ru-iperf-probe
+    state: absent
+
+- name: RU probe | Remove script
+  when: ru_probe_remove_script | bool
+  ansible.builtin.file:
+    path: /usr/local/bin/ru_iperf_probe.sh
+    state: absent
+
+- name: RU probe | Remove unit files
+  when: ru_probe_remove_units | bool
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - ru-iperf-probe.service
+    - ru-iperf-probe.timer
+
+- name: RU probe | Systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
