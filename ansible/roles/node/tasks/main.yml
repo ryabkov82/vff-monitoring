@@ -6,6 +6,7 @@
 
 - name: Node | Include iperf3 server tasks
   ansible.builtin.include_tasks: iperf.yml
+  when: node_iperf_enable | bool
   tags: [node, node_iperf, iperf3]
 
 - name: Include if_speed tasks

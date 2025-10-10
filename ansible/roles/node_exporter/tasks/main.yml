@@ -128,6 +128,7 @@
     - name: Configure ufw for node_exporter
       ansible.builtin.include_role:
         name: ufw_firewall
+      when: firewall_ufw_manage | bool
       vars:
         ufw_firewall_rules:
           - rule: allow
