@@ -22,6 +22,7 @@ wg_iface: wgmon0
 wg_listen_port: 51821
 wg_mtu: 1280
 
+firewall_ufw_manage: false
 # VPN узлы (источник для targets/*.json.j2)
 vpn_nodes:
   - name: "nl-ams-1"

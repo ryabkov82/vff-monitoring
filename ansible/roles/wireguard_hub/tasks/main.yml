@@ -143,6 +143,7 @@
     - name: Configure ufw for WireGuard hub
       ansible.builtin.include_role:
         name: ufw_firewall
+      when: firewall_manage | bool
       vars:
         ufw_firewall_rules:
           - rule: allow

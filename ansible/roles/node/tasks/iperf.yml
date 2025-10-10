@@ -58,7 +58,9 @@
   tags: [node_iperf, iperf3]
 
 - name: Iperf3 | Detect ufw
-  when: node_iperf_enable | bool
+  when:
+    - node_iperf_enable | bool
+    - firewall_ufw_manage | bool
   ansible.builtin.stat:
     path: /usr/sbin/ufw
   register: iperf_ufw
@@ -67,9 +69,11 @@
 # --- Resolve hub WG IP for firewall rules ---
 - name: Iperf3 | Assert hub WG IP is known
   when:
-    - node_iperf_enable | bool
-    - iperf_ufw is defined and iperf_ufw.stat.exists
-    - node_iperf_ufw_from_hub_only | bool
+    - node_iperf_enable | default(false) | bool
+    - firewall_ufw_manage | default(false) | bool
+    - node_iperf_ufw_from_hub_only | default(true) | bool
+    - iperf_ufw is defined
+    - iperf_ufw.stat.exists
   ansible.builtin.assert:
     that:
       - hub_wg_ip_effective is defined
@@ -80,7 +84,11 @@
   tags: [node_iperf, iperf3]
 
 - name: Iperf3 | Configure ufw allowances
-  when: node_iperf_enable | bool and (iperf_ufw is defined and iperf_ufw.stat.exists)
+  when:
+    - node_iperf_enable | default(false) | bool
+    - firewall_ufw_manage | default(false) | bool
+    - iperf_ufw is defined
+    - iperf_ufw.stat.exists
   ansible.builtin.include_role:
     name: ufw_firewall
   vars:
