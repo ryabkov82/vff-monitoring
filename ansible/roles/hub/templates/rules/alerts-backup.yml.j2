@@ -1,0 +1,52 @@
+{% set stale_s  = backup_alert_stale_seconds  | default(26*60*60) %}
+{% set small_b  = backup_alert_small_bytes    | default(100*1024) %}
+{% set long_s   = backup_alert_long_seconds   | default(30*60) %}
+
+groups:
+- name: alerts-backup
+  rules:
+
+  - alert: BackupFailed
+    expr: backup:last_status != 0
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{% raw %}Backup — ошибка на {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Последний запуск бэкапа завершился с ошибкой (status != 0).\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: BackupStale
+    expr: backup:last_run_age_seconds > {{ stale_s }}
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Backup — нет свежих данных на {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Метрики бэкапа давно не обновлялись.\nВозраст последнего запуска: {{ humanizeDuration $value }}.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: BackupZeroSize
+    expr: backup:last_status == 0 and backup:last_size_bytes == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Backup — нулевой размер на {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Последний успешный бэкап имеет размер 0 байт.\nПроверь источник данных и исключения.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: BackupTooSmall
+    expr: backup:last_status == 0 and backup:last_size_bytes < {{ small_b }}
+    for: 15m
+    labels:
+      severity: info
+    annotations:
+      summary: "{% raw %}Backup — подозрительно маленький размер на {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Размер последнего успешного бэкапа выглядит аномально малым.\nПроверь объём данных и правила исключений.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: BackupLongDuration
+    expr: backup:last_duration_seconds > {{ long_s }}
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{% raw %}Backup — слишком долгая длительность на {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Длительность последнего бэкапа: {{ humanizeDuration $value }} — это слишком долго.\nВозможны проблемы с диском или сетью.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"

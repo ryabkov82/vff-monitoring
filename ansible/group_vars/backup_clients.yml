@@ -1,0 +1,4 @@
+# wg_ip берём из host_vars/<host>.yml
+
+# Лейблы, если хочешь единый role для целей
+prom_role: "backup"

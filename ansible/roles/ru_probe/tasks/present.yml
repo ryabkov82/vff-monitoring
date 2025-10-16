@@ -6,33 +6,34 @@
     update_cache: true
   tags: [ru_probe]
 
-# === Сбор публичных IP узлов через ssh -G + getent ===
-
-- name: RU probe | Seed node list (no role filter)
+- name: RU probe | Seed host list (vpn only)
   ansible.builtin.set_fact:
-    _ru_vpn_nodes: "{{ vpn_nodes | default([]) }}"
+    _target_hosts: "{{ groups['vpn'] | default([]) | list }}"
   tags: [ru_probe]
 
-- name: RU probe | Apply role filter if provided
+# === Сбор публичных IP узлов через ssh -G + getent =============================
+
+# Инициализируем список
+- name: RU probe | Init SSH query list
   ansible.builtin.set_fact:
-    _ru_vpn_nodes: >-
-      {{
-        _ru_vpn_nodes
-        | selectattr('name','defined')
-        | selectattr('wg_ip','defined')
-        | selectattr('role','defined')
-        | selectattr('role','in', ru_probe_target_roles | default([]))
-        | list
-      }}
-  when: (ru_probe_target_roles | default([]) | length) > 0
+    _ssh_query: []
+  tags: [ru_probe]
+
+# Наполняем: alias = hostvars[item].ssh_alias или inventory_hostname
+- name: RU probe | Build SSH query list (alias per host)
+  ansible.builtin.set_fact:
+    _ssh_query: "{{ _ssh_query + [ {'host': item, 'alias': (hostvars[item].ssh_alias | default(item)) } ] }}"
+  loop: "{{ _target_hosts }}"
+  vars:
+    _ssh_query: "{{ _ssh_query | default([]) }}"
   tags: [ru_probe]
 
 - name: RU probe | Read HostName from local ssh config (ssh -G)
   ansible.builtin.shell: |
     set -o pipefail
-    ssh -G {{ item.name }} 2>/dev/null | awk 'tolower($1)=="hostname"{print $2; exit}'
+    ssh -G {{ item.alias }} 2>/dev/null | awk 'tolower($1)=="hostname"{print $2; exit}'
   args: { executable: /bin/bash }
-  loop: "{{ _ru_vpn_nodes }}"
+  loop: "{{ _ssh_query }}"
   register: _sshg_nodes
   delegate_to: localhost
   run_once: true
@@ -61,22 +62,16 @@
   failed_when: false
   tags: [ru_probe]
 
-# Собираем map: nodename -> IPv4 (может быть пустая строка, тогда в шаблоне сработает фолбэк)
-- name: RU probe | Build map nodename -> public IPv4 (from ssh-config/getent)
+# Собираем map: inventory_hostname -> IPv4 (пустая строка допустима — шаблон подставит фолбэк)
+- name: RU probe | Build map host -> public IPv4 (from ssh-config/getent)
   ansible.builtin.set_fact:
     _name_to_ip: >-
       {{
         dict(
-          (_pernode_ip.results | default([]))
-          | map(attribute='item')
-          | map(attribute='item')
-          | map(attribute='name')
-          | list
+          (_ssh_query | default([])) | map(attribute='host') | list
           |
           zip(
-            (_pernode_ip.results | default([]))
-            | map(attribute='stdout')
-            | list
+            (_pernode_ip.results | default([])) | map(attribute='stdout') | list
           )
         )
       }}
@@ -85,7 +80,7 @@
   changed_when: false
   tags: [ru_probe]
 
-# === Деплой скриптов и юнитов ===
+# === Деплой скриптов и юнитов =================================================
 
 - name: RU probe | Install script
   ansible.builtin.template:

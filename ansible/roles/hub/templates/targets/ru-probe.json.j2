@@ -1,12 +1,12 @@
+{% import "shared/_vff_macros.j2" as vff with context -%}
 [
-{% set items = (ru_zondes | default([])) | selectattr('instance', 'defined') | list -%}
-{%- for z in items %}
+{% for h in groups['ru_zondes'] | default([]) -%}
   {
-    "targets": ["{{ z.instance }}"],
-    "labels": {{ (
-      {'name': z.name, 'role': (z.role | default('probe'))}
-      | combine(z.labels | default({}))
-    ) | to_json }}
+    "targets": ["{{ vff.instance(h) }}"],
+    "labels": {
+      "name": "{{ hostvars[h].probe_label | default(hostvars[h].node_name | default(h)) }}",
+      "role": "probe"
+    }
   }{% if not loop.last %},{% endif %}
 {%- endfor %}
 ]

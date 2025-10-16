@@ -1,48 +1,88 @@
-# Собираем единый каталог описаний узлов: vpn_nodes + ru_zondes
-- name: WireGuard facts | Build unified nodes catalog
+---
+# === WireGuard facts
+
+- name: WG facts | Init catalog
   ansible.builtin.set_fact:
-    wg_nodes_catalog: "{{ (vpn_nodes | default([])) + (ru_zondes | default([])) }}"
+    wg_nodes_catalog: []
   tags: [wireguard, wg_facts]
 
-# Находим запись для текущего хоста по имени inventory_hostname (если есть)
-- name: WireGuard facts | Lookup node entry by inventory_hostname in catalog
+# VPN
+- name: WG facts | Add VPN hosts
+  ansible.builtin.set_fact:
+    wg_nodes_catalog: >-
+      {{ wg_nodes_catalog + [ {
+           'inventory_hostname': item,
+           'wg_ip': (hostvars[item].wg_ip | default(hostvars[item].ansible_host)),
+           'role': 'vpn'
+         } ] }}
+  loop: "{{ groups['vpn'] | default([]) }}"
+  when: hostvars[item] is defined
+  tags: [wireguard, wg_facts]
+
+# RU probes
+- name: WG facts | Add RU probe hosts
+  ansible.builtin.set_fact:
+    wg_nodes_catalog: >-
+      {{ wg_nodes_catalog + [ {
+           'inventory_hostname': item,
+           'wg_ip': (hostvars[item].wg_ip | default(hostvars[item].ansible_host)),
+           'role': 'probe'
+         } ] }}
+  loop: "{{ groups['ru_zondes'] | default([]) }}"
+  when: hostvars[item] is defined
+  tags: [wireguard, wg_facts]
+
+# Backup clients
+- name: WG facts | Add backup client hosts
+  ansible.builtin.set_fact:
+    wg_nodes_catalog: >-
+      {{ wg_nodes_catalog + [ {
+           'inventory_hostname': item,
+           'wg_ip': (hostvars[item].wg_ip | default(hostvars[item].ansible_host)),
+           'role': 'backup'
+         } ] }}
+  loop: "{{ groups['backup_clients'] | default([]) }}"
+  when: hostvars[item] is defined
+  tags: [wireguard, wg_facts]
+
+# Дедупликация по inventory_hostname (если хост в нескольких группах)
+- name: WG facts | Deduplicate catalog by inventory_hostname
+  ansible.builtin.set_fact:
+    wg_nodes_catalog: >-
+      {{ dict( (wg_nodes_catalog | map(attribute='inventory_hostname') | list)
+               | zip(wg_nodes_catalog) )
+         | dict2items
+         | map(attribute='value')
+         | list }}
+  tags: [wireguard, wg_facts]
+
+# Текущий хост
+- name: WG facts | Lookup current host entry
   ansible.builtin.set_fact:
     wireguard_node_entry: >-
       {{
         wg_nodes_catalog
-        | selectattr('name','equalto', inventory_hostname)
-        | list
-        | first
-        | default(None)
+        | selectattr('inventory_hostname','equalto', inventory_hostname)
+        | list | first | default(None)
       }}
   tags: [wireguard, wg_facts]
 
-# Если wg_ip уже задан (hosts.ini/host_vars) — уважаем его и не трогаем
-# Иначе пробуем взять wg_ip из найденной записи
-- name: WireGuard facts | Derive wg_ip from entry (if not set)
+# Вывести wg_ip, если не задан (fallback: ansible_host)
+- name: WG facts | Derive wg_ip if missing
   ansible.builtin.set_fact:
-    wg_ip: "{{ wireguard_node_entry.wg_ip }}"
-  when:
-    - wg_ip is not defined
-    - wireguard_node_entry is not none
-    - wireguard_node_entry.wg_ip is defined
+    wg_ip: "{{ (wireguard_node_entry.wg_ip | default(ansible_host)) | string }}"
+  when: wg_ip is not defined
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Normalize wg_ip to string
-  ansible.builtin.set_fact:
-    wg_ip: "{{ wg_ip | string }}"
-  when: wg_ip is defined
-  tags: [wireguard, wg_facts]
-
-- name: WireGuard facts | Derive /24 subnet cidr from wg_ip
+# Подсеть /24
+- name: WG facts | Compute /24 subnet
   ansible.builtin.set_fact:
     wg_subnet_cidr: "{{ (wg_ip | regex_replace('\\.\\d+$', '.0')) }}/24"
-  when:
-    - wg_ip is defined
-    - wg_ip | length > 0
+  when: wg_ip is defined and (wg_ip | length > 0)
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Remember hub inventory host (if any)
+# Хаб
+- name: WG facts | Remember hub inventory host (if any)
   ansible.builtin.set_fact:
     wireguard_hub_inventory_host: "{{ groups['hub'][0] }}"
   when:
@@ -51,7 +91,7 @@
     - groups['hub'] | length > 0
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Derive effective hub wg_ip
+- name: WG facts | Effective hub wg_ip
   ansible.builtin.set_fact:
     hub_wg_ip_effective: >-
       {{
@@ -67,15 +107,13 @@
   when: hub_wg_ip_effective is not defined
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Provide /32 hub cidr helper
+- name: WG facts | Hub /32 helper
   ansible.builtin.set_fact:
     hub_wg_ip_cidr32: "{{ hub_wg_ip_effective }}/32"
-  when:
-    - hub_wg_ip_effective is defined
-    - hub_wg_ip_effective | length > 0
+  when: hub_wg_ip_effective | default('') | length > 0
   tags: [wireguard, wg_facts]
 
-- name: WireGuard facts | Mark consolidation complete
+- name: WG facts | Done
   ansible.builtin.set_fact:
     wireguard_facts_loaded: true
   tags: [wireguard, wg_facts]

@@ -1,0 +1,7 @@
+---
+- name: Backup clients — WG + Node Exporter
+  hosts: backup_clients
+  become: true
+  roles:
+    - wireguard_node
+    - node_exporter

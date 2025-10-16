@@ -1,0 +1,8 @@
+node_name: "fi-hel-1"
+wg_ip: "10.77.0.6"
+prom_role: "vpn"
+uplink_device: "ens18"
+uplink_speed_bps: 1000000000
+reality:
+  e2e_enabled: true
+  sni: "www.cloudflare.com"

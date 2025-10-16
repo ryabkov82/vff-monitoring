@@ -48,10 +48,12 @@ flowchart LR
     H8[(REALITY E2E probes<br/>textfile)]
     H9[(Prometheus rules<br/>recording и alerts)]
     H10[(Marzban exporter)]
+    H11[[Scrape job<br/>backup — file_sd nodes-backup.json<br/>keep backup_*]]
+    H12[[Scrape job<br/>node — file_sd nodes.json<br/>drop backup_*]]
   end
 
   %% =========================
-  %% NODES
+  %% NODES (VPN)
   %% =========================
   subgraph NODES[VPN узлы группа vpn]
     direction TB
@@ -60,6 +62,15 @@ flowchart LR
     N3[WireGuard metrics<br/>textfile]
     N4[REALITY svc health<br/>textfile]
     N5[Speedtest Ookla<br/>textfile]
+  end
+
+  %% =========================
+  %% BACKUP CLIENTS
+  %% =========================
+  subgraph BACKUPS[Backup клиенты группа backup_clients]
+    direction TB
+    B2[(Backup system<br/>restic/скрипт → .prom<br/>backup метрики)]
+    B1[node_exporter :9100<br/>textfile с backup метриками]
   end
 
   %% =========================
@@ -79,8 +90,10 @@ flowchart LR
   %% -------- Ansible раскатка --------
   A1 -->|deploy cfg provisioning| HUB
   A2 -->|install agents| NODES
+  A2 -->|install agents| BACKUPS
   A3 --> HUB
   A3 --> NODES
+  A3 --> BACKUPS
 
   %% -------- Скрейпы Prometheus --------
   N1 -->|/metrics| H1
@@ -89,9 +102,16 @@ flowchart LR
   N4 -->|textfile| N1
   N5 -->|textfile| N1
 
+  B2 -->|writes .prom| B1
+  B1 -->|/metrics backup| H1
+
   H7 -->|textfile| H1
   H8 -->|textfile| H1
   H10 -->|/metrics| H1
+
+  %% Привязка scrape jobs (логическая)
+  H12 -. собирает с .-> NODES
+  H11 -. собирает с .-> BACKUPS
 
   %% Blackbox проверяет ИМЕННО VPN-узлы
   H4 -->|/probe icmp tcp| NODES
@@ -109,8 +129,9 @@ flowchart LR
   %% Speedtest использует внешние сервера
   N5 -. использует .-> S1
 
-  %% WireGuard оверлей между хабом и нодами
+  %% WireGuard оверлей между хабом и нодами и бэкап-клиентами
   HUB -. WG .- WGNET -. WG .- NODES
+  HUB -. WG .- WGNET -. WG .- BACKUPS
 
   %% RU iperf3 проба — через WG к узлам
   H7 -->|iperf3 via WG| NODES
@@ -148,6 +169,7 @@ flowchart LR
 - Роль Reality E2E (sing‑box энд‑ту‑энд проверка): [docs/reality_e2e-role.md](docs/reality_e2e-role.md)
 - **Развёртывание RU‑зонда (ru_zondes):** [docs/NEW_RU_ZONDE.md](docs/NEW_RU_ZONDE.md)
 - **Подключение нового VPN‑узла:** [docs/NEW_NODE.md](docs/NEW_NODE.md)
+- **Интеграция бэкапов (backup-клиенты + метрики):** [docs/BACKUPS_MONITORING.md](docs/BACKUPS_MONITORING.md)
 
 ---
 

@@ -10,7 +10,7 @@ grafana_dashboards_dir: "{{ grafana_dir }}/dashboards"
 grafana_plugins_dir: "{{ grafana_dir }}/plugins"
 
 # Откуда читать JSON-дашборды на КОНТРОЛ-ноде (репозиторий)
-grafana_dashboards_repo_dir: "{{ playbook_dir }}/../grafana/dashboards"
+grafana_dashboards_repo_dir: "{{ playbook_dir }}/../../grafana/dashboards"
 
 # --- Grafana credentials (safe defaults) ------------------------------
 grafana_admin_user: "admin"
