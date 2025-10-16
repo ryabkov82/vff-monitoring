@@ -1,26 +1,19 @@
 ---
-- name: IfSpeed | Derive uplink_device from vpn_nodes or defaults
+# Берём из host_vars текущего хоста; если не задано — подставляем дефолты роли
+- name: IfSpeed | Derive uplink_device from hostvars or defaults
   ansible.builtin.set_fact:
     node_uplink_device_effective: >-
       {{
-        (
-          vpn_nodes
-          | selectattr('name', 'equalto', inventory_hostname)
-          | list | first | default({})
-        ).uplink_device
+        hostvars[inventory_hostname].uplink_device
         | default(node_uplink_default_device)
       }}
 
-- name: IfSpeed | Derive uplink_speed_bps from vpn_nodes or defaults
+- name: IfSpeed | Derive uplink_speed_bps from hostvars or defaults
   ansible.builtin.set_fact:
     node_uplink_speed_bps_effective: >-
       {{
-        (
-          vpn_nodes
-          | selectattr('name', 'equalto', inventory_hostname)
-          | list | first | default({})
-        ).uplink_speed_bps
-        | default(node_uplink_default_speed_bps)
+        (hostvars[inventory_hostname].uplink_speed_bps
+         | default(node_uplink_default_speed_bps)) | int
       }}
 
 - name: IfSpeed | Publish if_speed_bps via textfile

@@ -1,0 +1,8 @@
+node_name: "de-fra-2"
+wg_ip: "10.77.0.8"
+prom_role: "vpn"
+uplink_device: "ens3"
+uplink_speed_bps: 10000000000
+reality:
+  e2e_enabled: true
+  sni: "www.cloudflare.com"

@@ -1,5 +1,7 @@
+{% import "shared/_vff_macros.j2" as vff with context -%}
 [
-{% for n in vpn_nodes %}
-  { "targets": ["{{ n.instance }}"], "labels": { "name": "{{ n.name }}", "role": "{{ n.role }}" } }{% if not loop.last %},{% endif %}
-{% endfor %}
+{% for h in groups['vpn'] | default([]) -%}
+  { "targets": ["{{ vff.instance(h) }}"],
+    "labels": { "name": "{{ vff.node_name(h) }}", "role": "{{ vff.role(h, 'vpn') }}" } }{% if not loop.last %},{% endif %}
+{%- endfor %}
 ]

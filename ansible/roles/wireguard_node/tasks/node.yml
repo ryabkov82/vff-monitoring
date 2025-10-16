@@ -58,7 +58,7 @@
         that:
           - wg_ip is defined
           - (wg_ip | ansible.utils.ipaddr) is not none
-        fail_msg: "wg_ip не задан для {{ inventory_hostname }}. Задай wg_ip в hosts.ini/host_vars или в vpn_nodes."
+        fail_msg: "wg_ip не задан для {{ inventory_hostname }}. Задай wg_ip в hosts.ini/host_vars."
 
     - name: Slurp node private key (remote)
       ansible.builtin.slurp:

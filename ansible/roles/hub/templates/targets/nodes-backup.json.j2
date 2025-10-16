@@ -1,0 +1,15 @@
+{% import "shared/_vff_macros.j2" as vff with context -%}
+[
+{% for h in groups['backup_clients'] | default([]) -%}
+  {
+    "targets": ["{{ vff.instance(h) }}"],
+    "labels": {
+      "instance": "{{ vff.instance(h) }}",
+      "name": "{{ hostvars[h].backup_job_name
+                  | default(hostvars[h].node_name
+                  | default(h)) }}",
+      "role": "backup"
+    }
+  }{% if not loop.last %},{% endif %}
+{%- endfor %}
+]

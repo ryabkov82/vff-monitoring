@@ -1,15 +1,15 @@
 ---
-- name: Derive wg_ip locally
-  vars:
-    _matches: "{{ vpn_nodes | default([]) | selectattr('name', 'equalto', inventory_hostname) | list }}"
-    _raw: >-
-      {{
-        hub_wg_ip
-          | default((_matches | first).wg_ip if (_matches | length > 0) else omit, true)
-      }}
+- name: Derive wg_ip locally (hub-aware)
   ansible.builtin.set_fact:
-    # берём строку и отрезаем маску, если была (10.77.0.1/24 -> 10.77.0.1)
-    wg_ip: "{{ (_raw | string).split('/')[0] }}"
+    wg_ip: >-
+      {{
+        (
+          hostvars[inventory_hostname].hub_wg_ip
+          | default(hostvars[inventory_hostname].wg_ip
+          | default(ansible_host))
+          | string
+        ).split('/')[0]
+      }}
   when: wg_ip is not defined
   tags: [node_exporter]
 

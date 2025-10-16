@@ -128,10 +128,46 @@
             )
           }}
 
-    # === Итоговая карта pubkey'ев: vpn + ru_zondes ===
-    - name: Combine pubkey maps (vpn + ru_zondes)
+    # === Автосбор pubkey'ев узлов: backup_clients ===
+    - name: Collect node pubkeys from backup clients (if any)
+      when: groups['backup_clients'] is defined and (groups['backup_clients'] | length) > 0
+      ansible.builtin.slurp:
+        src: "/etc/wireguard/{{ wg_iface }}.pub"
+      register: backup_pubs
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['backup_clients'] | default([]) }}"
+      ignore_errors: true
+
+    - name: Build map host -> pubkey (backup_pubmap)
+      when: backup_pubs is defined
       ansible.builtin.set_fact:
-        node_pubmap: "{{ (vpn_pubmap | default({})) | combine(ru_pubmap | default({})) }}"
+        backup_pubmap: >-
+          {{
+            dict(
+              backup_pubs.results
+              | selectattr('content', 'defined')
+              | map(attribute='item')
+              | zip(
+                  backup_pubs.results
+                  | selectattr('content', 'defined')
+                  | map(attribute='content')
+                  | map('b64decode')
+                  | map('trim')
+                )
+            )
+          }}
+
+    # === Итоговая карта pubkey'ев: backup + ru_zondes + vpn (vpn имеет приоритет) ===
+    - name: Combine pubkey maps (backup + ru_zondes + vpn with vpn priority)
+      ansible.builtin.set_fact:
+        node_pubmap: >-
+          {{
+            (
+              (backup_pubmap | default({}))
+              | combine(ru_pubmap | default({}))
+            )
+            | combine(vpn_pubmap | default({}))
+          }}
 
     - name: Render hub config
       ansible.builtin.template:
@@ -143,7 +179,7 @@
     - name: Configure ufw for WireGuard hub
       ansible.builtin.include_role:
         name: ufw_firewall
-      when: firewall_manage | bool
+      when: firewall_ufw_manage | bool
       vars:
         ufw_firewall_rules:
           - rule: allow

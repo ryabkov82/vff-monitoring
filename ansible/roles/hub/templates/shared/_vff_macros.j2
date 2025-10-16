@@ -1,0 +1,24 @@
+
+{% macro node_name(h) -%}
+  {{ hostvars[h].node_name | default(h) }}
+{%- endmacro %}
+
+{% macro probe_name(h) -%}
+  {{ hostvars[h].probe_label | default(hostvars[h].node_name | default(h)) }}
+{%- endmacro %}
+
+{% macro wg_ip(h) -%}
+  {{ hostvars[h].wg_ip | default(hostvars[h].ansible_host | default('')) }}
+{%- endmacro %}
+
+{% macro instance(h, port='9100') -%}
+  {{ (hostvars[h].wg_ip | default(hostvars[h].ansible_host | default(''))) ~ ':' ~ port }}
+{%- endmacro %}
+
+{% macro role(h, default_role='vpn') -%}
+  {{ hostvars[h].prom_role | default(default_role) }}
+{%- endmacro %}
+
+{% macro backup_name(h) -%}
+  {{ hostvars[h].backup_job_name | default(hostvars[h].node_name | default(h)) }}
+{%- endmacro %}

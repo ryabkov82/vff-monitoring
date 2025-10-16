@@ -1,0 +1,8 @@
+node_name: "nl-ams-3"
+wg_ip: "10.77.0.4"
+prom_role: "vpn"
+uplink_device: "enp3s0"
+uplink_speed_bps: 10000000000
+reality:
+  e2e_enabled: true
+  sni: "segment-ams-03.digitalstreamers.xyz"

@@ -164,14 +164,17 @@ endif
 	WG_IP_TMP="$(WG_IP)"; \
 	if [ -z "$$WG_IP_TMP" ]; then \
 	  WG_IP_TMP=$$(ansible -i $(INVENTORY) $(HOST) -m debug \
-	    -a 'msg={{ (vpn_nodes | selectattr("name","equalto",inventory_hostname) | list | first).wg_ip | default("") }}' \
+	    -a 'msg={{ (hostvars[inventory_hostname].wg_ip | default(ansible_host)) | string }}' \
 	    $(ANSIBLE_FLAGS) 2>/dev/null \
 	    | sed -n 's/.*"msg": "\(.*\)".*/\1/p' | tail -n1); \
 	fi; \
 	if [ -z "$$WG_IP_TMP" ] || [ "$$WG_IP_TMP" = "VARIABLE IS NOT DEFINED!" ]; then \
-	  echo "!! Cannot resolve WG_IP for $(HOST). Pass WG_IP=<ip> or define vpn_nodes[].wg_ip in group_vars."; \
+	  echo "!! Cannot resolve WG_IP for $(HOST)."; \
+	  echo "   Pass WG_IP=<ip> or define host_vars/$(HOST).yml with wg_ip."; \
 	  exit 2; \
 	fi; \
+	# срежем возможную маску /xx
+	WG_IP_TMP=$$(echo "$$WG_IP_TMP" | sed 's,/.*$$,,'); \
 	echo "   WG_IP=$$WG_IP_TMP"; \
 	PORT="$${NODE_PORT:-9100}"; \
 	echo ">> [1/3] WireGuard status on hub"; \
@@ -728,3 +731,36 @@ endif
 iperf-wg-disable-vpn: ## Остановить/отключить iperf3@WG_PORT на всей группе vpn
 	@# Пример: make iperf-wg-disable-vpn
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY_VPN) --limit vpn --tags iperf3_cleanup $(ANSIBLE_FLAGS)
+
+# === backups =================================================
+
+# Плейбук для бэкап-клиентов
+PLAY_BACKUP := ansible/playbooks/backup.yml
+
+add-backup-client: ## Онбординг backup-клиента: WG + node_exporter -> wg_hub -> Prometheus (HOST обязателен)
+	@# Пример: make add-backup-client HOST=nl-ams-2
+ifndef HOST
+	$(error Usage: make add-backup-client HOST=<hostname>)
+endif
+	@echo ">> [1/3] WireGuard + node_exporter on backup client: $(HOST)"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_BACKUP) --limit $(HOST) $(ANSIBLE_FLAGS)
+
+	@echo ">> [2/3] Update peers on hub"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_hub --limit hub $(ANSIBLE_FLAGS)
+
+	@echo ">> [3/3] Apply hub bundle (Prometheus targets/rules + health)"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
+
+	@echo "✓ Done: backup client $(HOST) onboarded"
+
+add-backup-all: ## Онбординг всех backup-клиентов группой: WG + node_exporter -> wg_hub -> Prometheus
+	@echo ">> [1/3] WireGuard + node_exporter on ALL backup clients"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_BACKUP) $(ANSIBLE_FLAGS)
+
+	@echo ">> [2/3] Update peers on hub"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_hub --limit hub $(ANSIBLE_FLAGS)
+
+	@echo ">> [3/3] Apply hub bundle (Prometheus targets/rules + health)"
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
+
+	@echo "✓ Done: all backup clients onboarded"
