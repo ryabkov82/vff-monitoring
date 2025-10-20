@@ -25,24 +25,12 @@ IS_BUSY_DEBUG="${IS_BUSY_DEBUG:-0}"
 # цели: "name;ip;iperf_port"
 TARGETS=(
 {% for h in _target_hosts | default([]) -%}
-  "{{
-      hostvars[h].node_name
-      | default(h)
-  }};{{
-      (
-        _name_to_ip.get(h) | default('') | trim
-      )
-      if (_name_to_ip.get(h) | default('') | trim)
-      else (
-        hostvars[h].public_ip
-        | default(hostvars[h].wg_ip)
-      )
-  }};{{
-      hostvars[h].iperf_public_port
-      | default(ru_probe_port_default)
-  }}"
-{% if not loop.last %},{% endif %}
-{%- endfor %}
+"{{ hostvars[h].node_name | default(h) }};{{ (
+      _name_to_ip.get(h) | default('') | trim
+    ) if (_name_to_ip.get(h) | default('') | trim)
+      else (hostvars[h].public_ip | default(hostvars[h].wg_ip))
+  }};{{ hostvars[h].iperf_public_port | default(ru_probe_port_default) }}"
+{% endfor -%}
 )
 
 # --- блокировка от параллельных запусков (systemd timer/ручной) ---

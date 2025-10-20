@@ -18,7 +18,7 @@
 
 - name: Import Alertmanager tasks
   ansible.builtin.import_tasks: alertmanager.yml
-  tags: [alertmanager]
+  tags: [prometheus, alertmanager]
 
 - name: Import Blackbox tasks
   ansible.builtin.import_tasks: blackbox.yml

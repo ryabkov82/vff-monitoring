@@ -11,14 +11,24 @@ groups:
       summary: "{% raw %}Занятость интерфейса >80% — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }}{% endraw %}"
       description: "{% raw %}Средняя занятость интерфейса за 5 минут: {{ humanizePercentage $value }} (> 80%).\nМетрика: iface:utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}, интерфейс: {{ $labels.device }}.{% endraw %}"
 
-  - alert: HighIfaceUtilizationCritical
+  - alert: HighIfaceUtilizationStat
     expr: max_over_time(iface:utilization:ratio[5m]) > 0.95
     for: 3m
     labels:
-      severity: critical
+      severity: info
+      notify: "off"
     annotations:
       summary: "{% raw %}Канал почти насыщен (>95%) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }}{% endraw %}"
       description: "{% raw %}Средняя занятость интерфейса за 5 минут: {{ humanizePercentage $value }} (> 95%).\nМетрика: iface:utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}, интерфейс: {{ $labels.device }}.{% endraw %}"
+
+  - alert: HighIfaceUtilizationCritical
+    expr: max_over_time(iface:utilization:ratio[5m]) > 0.95
+    for: 30m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{% raw %}Канал почти насыщен (>95%) (30m) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }} / {{ $labels.device }}{% endraw %}"
+      description: "{% raw %}Занятость интерфейса держится >95% не менее 30 минут (окно 5m, for 30m).\nМетрика: iface:utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}, интерфейс: {{ $labels.device }}.{% endraw %}"
 
   - alert: HighNodeUplinkUtilization
     expr: max_over_time(node:uplink_utilization:ratio[5m]) > 0.80
@@ -29,14 +39,24 @@ groups:
       summary: "{% raw %}Занятость канала узла >80% — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
       description: "{% raw %}Средняя занятость аплинка узла за 5 минут: {{ humanizePercentage $value }} (> 80%).\nМетрика: node:uplink_utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
 
-  - alert: HighNodeUplinkUtilizationCritical
+  - alert: HighNodeUplinkUtilizationStat
     expr: max_over_time(node:uplink_utilization:ratio[5m]) > 0.95
     for: 3m
     labels:
-      severity: critical
+      severity: info
+      notify: "off"
     annotations:
       summary: "{% raw %}Канал узла почти насыщен (>95%) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
       description: "{% raw %}Средняя занятость аплинка узла за 5 минут: {{ humanizePercentage $value }} (> 95%).\nМетрика: node:uplink_utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
+
+  - alert: HighNodeUplinkUtilizationCritical
+    expr: max_over_time(node:uplink_utilization:ratio[5m]) > 0.95
+    for: 30m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{% raw %}Канал узла почти насыщен (>95%) (30m) — {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}"
+      description: "{% raw %}Занятость аплинка держится >95% не менее 30 минут (окно 5m, for 30m).\nМетрика: node:uplink_utilization:ratio.\nУзел: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}"
 
   - alert: MissingIfSpeed
     expr: |-

@@ -9,7 +9,6 @@ groups:
       annotations:
         summary: |
           {% raw %}ICMP недоступен: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
         description: |
           {% raw %}В течение 5 минут подряд probe_success=0 для {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}
 
@@ -22,21 +21,32 @@ groups:
       annotations:
         summary: |
           {% raw %}Высокий RTT (p95 > 200 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
         description: |
           p95 ICMP RTT > 200 мс при доступности > 90% за последние 5 минут.
 
-    # Потери ICMP >10% (усреднение за 10 мин по 5-мин агрегату)
+    # Потери ICMP >10% (усреднение за 10 мин по 5-мин агрегату) — СТАТИСТИКА
     - alert: PingPacketLoss
       expr: avg_over_time(bb:icmp:loss:ratio:5m[10m]) > 0.10
+      labels:
+        severity: info
+        notify: off
+      annotations:
+        summary: |
+          {% raw %}Потери ICMP > 10% (статистика): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          Средние потери пакетов ICMP за 10 минут превышают 10%. Алерт помечен как статистический (notify=off).
+
+    # Потери ICMP >10% устойчиво ≥30м — ОПЕРАЦИОННЫЙ
+    - alert: PingPacketLossSustained30m
+      expr: avg_over_time(bb:icmp:loss:ratio:5m[10m]) > 0.10
+      for: 30m
       labels:
         severity: warning
       annotations:
         summary: |
-          {% raw %}Потери ICMP > 10%: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
+          {% raw %}ICMP потери >10% устойчиво ≥30м: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
         description: |
-          Средние потери пакетов ICMP за 10 минут превышают 10%.
+          Потери >10% держатся не менее 30 минут (окно в expr — 10м по 5м агрегату, плюс for=30m).
 
     # Сильный джиттер RTT (>50 ms stdev) при нормальной доступности
     - alert: PingHighJitter
@@ -47,7 +57,6 @@ groups:
       annotations:
         summary: |
           {% raw %}Высокий джиттер RTT (> 50 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
         description: |
           Стандартное отклонение ICMP RTT превышает 50 мс при доступности > 90%.
 
@@ -59,19 +68,30 @@ groups:
       annotations:
         summary: |
           {% raw %}REALITY порт 443 не отвечает: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
         description: |
           В течение 2 минут подряд probe_success=0 для TCP/443 проверки.
 
-    # Медленный TCP-connect на 443 при нормальной доступности: p95 > 300 ms
+    # Медленный TCP-connect на 443 при нормальной доступности — СТАТИСТИКА
     - alert: Tcp443Slow
       expr: (bb:tcp443:latency:p95:5m > 0.300) and on (instance) (bb:tcp443:avail:ratio:2m > 0.9)
       for: 10m
       labels:
+        severity: info
+        notify: off
+      annotations:
+        summary: |
+          {% raw %}Медленный TCP 443 (статистика): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          p95 длительности TCP/443 > 300 мс при доступности > 90% (10 минут). Алерт помечен как статистический (notify=off).
+
+    # Медленный TCP 443 устойчиво ≥30м — ОПЕРАЦИОННЫЙ
+    - alert: Tcp443SlowSustained30m
+      expr: (bb:tcp443:latency:p95:5m > 0.300) and on (instance) (bb:tcp443:avail:ratio:2m > 0.9)
+      for: 30m
+      labels:
         severity: warning
       annotations:
         summary: |
-          {% raw %}Медленный TCP 443 (p95 > 300 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
-
+          {% raw %}Медленный TCP 443 устойчиво ≥30м: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
         description: |
-          p95 длительности TCP/443 превышает 300 мс при доступности > 90% за последние 5 минут.
+          p95 длительности TCP/443 > 300 мс держится не менее 30 минут при доступности > 90%.
