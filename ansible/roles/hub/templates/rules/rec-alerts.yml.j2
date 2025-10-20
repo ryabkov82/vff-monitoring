@@ -1,0 +1,18 @@
+groups:
+- name: rec-alerts
+  interval: 1m
+  rules:
+
+  # Непрерывный 0/1 ряд для firing-алертов (с подложкой нулей)
+  - record: vff:alert:firing
+    # Берём только активные ALERTS и сразу удаляем «шумные» метки (instance, job, alertstate и т.п.)
+    expr: |
+        max by (alertname, name, notify, severity) (
+            ALERTS{alertstate="firing"}
+        )
+            or on (alertname, name, notify, severity)
+        (
+            0 * group by (alertname, name, notify, severity) (
+                ALERTS{alertstate="firing"} offset 1h
+            )
+        )

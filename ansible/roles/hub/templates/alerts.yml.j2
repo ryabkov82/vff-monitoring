@@ -8,14 +8,43 @@ global:
   resolve_timeout: {{ am_global_resolve_timeout | default('5m') }}
 
 route:
+  # Куда падает то, что не подошло под дочерние routes
   receiver: {{ have_tg and 'tg' or 'blackhole' }}
+
   group_by:
-{% for lb in am_route_group_by | default(['alertname','instance']) %}
+{# По умолчанию группируем по alertname+name (вместо instance). Переопределяемо переменной. #}
+{% for lb in am_route_group_by | default(['alertname','name']) %}
     - {{ lb }}
 {% endfor %}
-  group_wait: {{ am_route_group_wait | default('30s') }}
-  group_interval: {{ am_route_group_interval | default('5m') }}
-  repeat_interval: {{ am_route_repeat_interval | default('2h') }}
+  group_wait:     {{ am_route_group_wait     | default('30s') }}
+  group_interval: {{ am_route_group_interval | default('5m')  }}
+  repeat_interval: {{ am_route_repeat_interval| default('2h')  }}
+
+  # Дочерние правила маршрутизации
+  routes:
+    # 1) Статистические: notify="off" — без уведомлений, только в UI/ALERTS
+    - matchers:
+        - 'notify="off"'
+      receiver: blackhole
+      continue: false
+
+    # 2) (Опционально) полностью глушим severity=info
+{% if am_drop_info | default(true) %}
+    - matchers:
+        - 'severity="info"'
+      receiver: blackhole
+      continue: false
+{% endif %}
+
+    # 3) Операционные: только warning|critical — в Telegram
+    - matchers:
+        - 'severity=~"warning|critical"'
+      receiver: {{ have_tg and 'tg' or 'blackhole' }}
+      continue: false
+
+    # 4) Остальное — в чёрную дыру
+    - receiver: blackhole
+      continue: false
 
 receivers:
 {% if have_tg %}
@@ -26,5 +55,32 @@ receivers:
         api_url: "{{ am_telegram_api_url | default('https://api.telegram.org') }}"
         parse_mode: "{{ am_telegram_parse_mode | default('') }}"
         send_resolved: {{ (am_telegram_send_resolved | default(true)) | bool | to_json }}
+        {% if am_telegram_disable_web_page_preview is defined %}
+        disable_web_page_preview: {{ am_telegram_disable_web_page_preview | bool | to_json }}
+        {% endif %}
 {% endif %}
+
   - name: blackhole
+
+# Подавление дублирующих предупреждений, когда есть критический алерт
+inhibit_rules:
+  - source_matchers:
+      - 'severity="critical"'
+    target_matchers:
+      - 'severity="warning"'
+    equal:
+      # Должны совпадать эти лейблы, чтобы warning подавился
+      - alertname
+      - name
+
+{# --------- (опционально) окна тишины: включаются, если задано am_mute_time_intervals --------- #}
+{% if am_mute_time_intervals is defined and am_mute_time_intervals %}
+mute_time_intervals:
+{% for interval in am_mute_time_intervals %}
+  - name: {{ interval.name }}
+    time_intervals:
+{% for t in interval.time_intervals %}
+      - {{ t | to_json }}
+{% endfor %}
+{% endfor %}
+{% endif %}
