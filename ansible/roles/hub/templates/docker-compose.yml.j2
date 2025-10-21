@@ -10,6 +10,7 @@ services:
       - "--web.enable-lifecycle"
       - "--storage.tsdb.retention.time={{ prometheus_tsdb_retention_time | default('7d') }}"
       - "--storage.tsdb.wal-compression"
+      - "--web.enable-admin-api"
     volumes:
       - "{{ monitoring_root }}/prometheus:/etc/prometheus:ro"
       - "prom_data:/prometheus"

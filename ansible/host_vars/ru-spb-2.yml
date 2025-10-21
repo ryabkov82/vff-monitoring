@@ -1,0 +1,8 @@
+node_name: "ru-spb-2"
+wg_ip: "10.77.0.9"
+prom_role: "vpn"
+uplink_device: "eth0"
+uplink_speed_bps: 1000000000
+reality:
+  e2e_enabled: true
+  sni: "www.cloudflare.com"
