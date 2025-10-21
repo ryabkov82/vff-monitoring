@@ -1,18 +1,28 @@
 groups:
-- name: rec-alerts
+- name: vff-alert-analytics
   interval: 1m
   rules:
+    # Бинарно: "горит ли ЛЮБОЙ"
+    - record: vff:alert:active_any
+      expr: max by (alertname, name) (ALERTS{alertstate="firing"})
 
-  # Непрерывный 0/1 ряд для firing-алертов (с подложкой нулей)
-  - record: vff:alert:firing
-    # Берём только активные ALERTS и сразу удаляем «шумные» метки (instance, job, alertstate и т.п.)
-    expr: |
-        max by (alertname, name, notify, severity) (
-            ALERTS{alertstate="firing"}
-        )
-            or on (alertname, name, notify, severity)
-        (
-            0 * group by (alertname, name, notify, severity) (
-                ALERTS{alertstate="firing"} offset 1h
-            )
-        )
+    # Бинарно: "горит ли СТАТИСТИЧЕСКИЙ"
+    - record: vff:alert:active_stat
+      expr: max by (alertname, name) (ALERTS{alertstate="firing", notify="off"})
+
+    # 0/1: горит ОПЕРАЦИОННЫЙ = any без stat
+    - record: vff:alert:active_op
+      expr: vff:alert:active_any
+            unless on (alertname, name)
+            vff:alert:active_stat
+
+    # Импульс старта ОПЕРАЦИОННОГО (0→1): сейчас есть, минуту назад не было
+    - record: vff:alert:started_op
+      expr: vff:alert:active_op
+            unless on (alertname, name)
+            vff:alert:active_op offset 1m
+
+    - record: vff:alert:started_stat
+      expr: vff:alert:active_stat
+            unless on (alertname, name)
+            vff:alert:active_stat offset 1m

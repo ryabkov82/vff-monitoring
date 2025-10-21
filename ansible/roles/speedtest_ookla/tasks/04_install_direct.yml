@@ -25,11 +25,17 @@
         node_speedtest_version: "1.2.X"
         node_speedtest_direct_url: "https://install.speedtest.net/app/cli/ookla-speedtest-{{ node_speedtest_version }}-linux-{{ _speedtest_arch }}.tgz"
 
-- name: Speedtest | Download tarball
+- name: Speedtest | Download tarball (robust)
   ansible.builtin.get_url:
     url: "{{ node_speedtest_direct_url }}"
     dest: "/tmp/ookla-speedtest-{{ _speedtest_arch }}.tgz"
     mode: "0644"
+    timeout: 90
+    validate_certs: true
+  register: speedtest_dl
+  retries: 5
+  delay: 10
+  until: speedtest_dl is succeeded
 
 - name: Speedtest | Ensure unpack dir
   ansible.builtin.file:
