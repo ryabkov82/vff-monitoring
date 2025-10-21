@@ -135,24 +135,27 @@ wg-show-%: ## Показать 'wg show' на конкретном хосте (�
 	@# Пример: make wg-show-nl-ams-1
 	ansible -i $(INVENTORY) $* -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true
 
-add-node: ## Онбординг новой ноды: WG + агенты (node+node_exporter+speedtest) на HOST -> wg_hub на хабе -> hub bundle
+add-node: ## Онбординг новой ноды: WG + агенты (node+node_exporter+speedtest) на HOST -> wg_hub на хабе -> hub bundle + ru_probe на ru_zondes
 	@# Пример: make add-node HOST=nl-ams-2
 ifndef HOST
 	$(error Usage: make add-node HOST=<hostname>)
 endif
-	@echo ">> [1/4] WireGuard on node: $(HOST)"
+	@echo ">> [1/5] WireGuard on node: $(HOST)"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_node --limit $(HOST) $(ANSIBLE_FLAGS)
 
-	@echo ">> [2/4] Monitoring agents on node (node + node_exporter + speedtest_ookla): $(HOST)"
+	@echo ">> [2/5] Monitoring agents on node (node + node_exporter + speedtest_ookla): $(HOST)"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags node,node_exporter,speedtest_ookla --limit $(HOST) $(ANSIBLE_FLAGS)
 
-	@echo ">> [3/4] Update peers on hub"
+	@echo ">> [3/5] Update peers on hub"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags wg_hub --limit hub $(ANSIBLE_FLAGS)
 
-	@echo ">> [4/4] Apply hub bundle (render targets/rules, etc.)"
+	@echo ">> [4/5] Apply hub bundle (render targets/rules, etc.)"
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --tags "hub,ru_probe,reality_e2e" --limit hub $(ANSIBLE_FLAGS)
 
-	@echo "✓ Done: node $(HOST) onboarded (WG + agents installed, hub updated)"
+	@echo ">> [5/5] Run ru_probe for ru_zondes group"
+	@$(MAKE) --no-print-directory ru-probe-zondes
+
+	@echo "✓ Done: node $(HOST) onboarded (WG + agents installed, hub updated, ru_probe applied to ru_zondes)"
 
 add-node-check: ## Проверить узел после онбординга (wg show, ping wg_ip, наличие таргета в Prometheus)
 	@# Пример: make add-node-check HOST=nl-ams-2  или  make add-node-check HOST=nl-ams-2 WG_IP=10.77.0.22
@@ -509,10 +512,6 @@ prom-health: ## Выполнить только health-проверки стек
 	@# Пример: make prom-health
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags health $(ANSIBLE_FLAGS)
 
-prom-reload: ## Горячая перезагрузка Prometheus (нужен --web.enable-lifecycle)
-	@# Пример: make prom-reload
-	curl -fsS -X POST http://127.0.0.1:9090/-/reload || true
-
 # -------------------------------------------------
 # Полная настройка RU-зондов (wg_node + node_exporter + ru_probe)
 # -------------------------------------------------
@@ -764,3 +763,41 @@ add-backup-all: ## Онбординг всех backup-клиентов груп�
 	$(ANSIBLE) -i $(INVENTORY) $(PLAY) --limit hub --tags "prometheus,health" $(ANSIBLE_FLAGS)
 
 	@echo "✓ Done: all backup clients onboarded"
+
+# ===== Remote (SSH) helpers =====
+# Пример запуска:
+#   make prom-clean-node-ssh HUB=monitor-hub PROM_CONTAINER=prometheus NAME=de-fra-1
+#   make prom-reload-ssh     HUB=monitor-hub PROM_CONTAINER=prometheus
+#
+HUB            ?= monitoring-hub         # ssh host (из ~/.ssh/config или user@host)
+SSH_OPTS       ?=
+PROM_CONTAINER ?= prometheus          # имя контейнера Prometheus на хабе
+CURL_IMAGE     ?= curlimages/curl:8.10.1
+
+# Удалить все серии по name=<NAME> на удалённом хабе
+.PHONY: prom-clean-node-ssh
+prom-clean-node-ssh:
+	@if [ -z "$(NAME)" ]; then echo "ERROR: set NAME, e.g. make prom-clean-node-ssh HUB=$(HUB) PROM_CONTAINER=$(PROM_CONTAINER) NAME=de-fra-1"; exit 1; fi
+	@echo "Remote delete series for name=$(NAME) on $(HUB) container=$(PROM_CONTAINER)"
+	@ssh $(SSH_OPTS) $(HUB) '\
+	  set -e; \
+	  CID=$$(sudo docker ps -q -f name=$(PROM_CONTAINER)); \
+	  [ -n "$$CID" ] || { echo "Prometheus container '$(PROM_CONTAINER)' not found"; exit 2; } ; \
+	  sudo docker run --rm --network container:$$CID $(CURL_IMAGE) \
+	    -sS -X POST -g "http://localhost:9090/api/v1/admin/tsdb/delete_series" \
+	    --data-urlencode "match[]={name=\"$(NAME)\"}"; \
+	  sudo docker run --rm --network container:$$CID $(CURL_IMAGE) \
+	    -sS -X POST -g "http://localhost:9090/api/v1/admin/tsdb/delete_series" \
+	    --data-urlencode "match[]={__name__=\"ALERTS\",name=\"$(NAME)\"}"; \
+	  sudo docker run --rm --network container:$$CID $(CURL_IMAGE) \
+	    -sS -X POST "http://localhost:9090/api/v1/admin/tsdb/clean_tombstones" \
+	'
+
+# Перезагрузка конфигурации/правил Prometheus на хабе
+.PHONY: prom-reload-ssh
+prom-reload-ssh:
+	@ssh $(SSH_OPTS) $(HUB) '\
+	  CID=$$(sudo docker ps -q -f name=$(PROM_CONTAINER)); \
+	  sudo docker exec $$CID wget -qO- --post-data="" http://localhost:9090/-/reload >/dev/null 2>&1 || \
+	  sudo docker kill -s HUP $$CID \
+	'
