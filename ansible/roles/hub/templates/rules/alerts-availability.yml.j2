@@ -12,17 +12,30 @@ groups:
         description: |
           {% raw %}В течение 5 минут подряд probe_success=0 для {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}.{% endraw %}
 
-    # Высокий RTT при нормальной доступности (p95 > 200 ms)
+    # === Статистический (короткий) ===
     - alert: PingHighLatency
       expr: (bb:icmp:rtt:p95:5m > 0.200) and on (instance) (bb:icmp:avail:ratio:5m > 0.9)
       for: 5m
       labels:
-        severity: warning
+        severity: info
+        notify: off
       annotations:
         summary: |
           {% raw %}Высокий RTT (p95 > 200 мс): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
         description: |
-          p95 ICMP RTT > 200 мс при доступности > 90% за последние 5 минут.
+          p95 ICMP RTT > 200 мс при доступности > 90% за последние 5 минут. (статистический сигнал, без нотификаций)
+
+    # === Операционный (длительный, уведомляем) ===
+    - alert: PingHighLatency30m
+      expr: (bb:icmp:rtt:p95:5m > 0.200) and on (instance) (bb:icmp:avail:ratio:5m > 0.9)
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}Высокий RTT (p95 > 200 мс) ≥30м: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          p95 ICMP RTT устойчиво >200 мс при доступности >90% в течение ≥30 минут. Требуется разбор причин (канал/маршрут/узел).
 
     # Потери ICMP >10% (усреднение за 10 мин по 5-мин агрегату) — СТАТИСТИКА
     - alert: PingPacketLoss

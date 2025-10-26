@@ -1,18 +1,32 @@
 groups:
 - name: alerts-reality-e2e
   rules:
+  # === Статистический (короткий) ===
   - alert: RealityE2EFailed
     expr: reality:e2e:ok == 0
     for: 2m
     labels:
-      severity: critical
+      severity: info
+      notify: off
     annotations:
       summary: |
         {% raw %}REALITY E2E: сбой на узле {{ $labels.name }}{% endraw %}
-
       description: |
-        E2E проверка через SOCKS не проходит ≥2 минуты. Проверь RU-probe (sing-box/таймер),
-        доступ к целевому хосту и маршрут до узла.
+        E2E проверка через SOCKS не проходит ≥2 минуты. (статистический сигнал, без нотификаций)
+        Проверь RU-probe (sing-box/таймер), доступ к целевому хосту и маршрут до узла.
+
+  # === Операционный (длительный) ===
+  - alert: RealityE2EFailed30m
+    expr: reality:e2e:ok == 0
+    for: 30m
+    labels:
+      severity: critical
+      # без notify: off — уйдёт по обычному маршруту (TG)
+    annotations:
+      summary: |
+        {% raw %}REALITY E2E: длительный сбой (≥30м) на {{ $labels.name }}{% endraw %}
+      description: |
+        E2E проверка через SOCKS не проходит непрерывно ≥30 минут. Требуется разбор и восстановление.
 
   - alert: RealityE2EStale
     expr: reality:e2e:last_run_age_seconds > 15m
