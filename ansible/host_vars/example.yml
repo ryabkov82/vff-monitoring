@@ -1,0 +1,20 @@
+# ansible/host_vars/example.yml
+# Пример host_vars для VPN-ноды (несекретные параметры).
+# Секреты Reality E2E (uuid/public_key/short_id) рекомендуется хранить отдельно:
+#   ansible/host_vars/<host>/vault.yml  (ansible-vault encrypted)
+# либо в group_vars/hub/vault.yml как общий набор.
+
+node_name: "nl-ams-1"
+wg_ip: "10.77.0.2"
+prom_role: "vpn"
+
+# Uplink (опционально)
+uplink_device: "ens3"          # по умолчанию ens3
+uplink_speed_bps: 10000000000  # 10 Gbit/s
+
+# Reality E2E (проверка доступности профилей)
+reality:
+  e2e_enabled: true
+  e2e_profile: xhttp           # reality | xhttp
+  sni: "api-ams-01.digitalstreamers.xyz"
+  xhttp_path: "/api/v1/sync/"

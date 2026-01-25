@@ -8,3 +8,9 @@
 
 # локальные переменные для Grafana
 .env.grafana
+
+# Ansible inventory host-specific vars (local / secrets)
+ansible/host_vars/*
+!ansible/host_vars/.gitkeep
+!ansible/host_vars/README.md
+!ansible/host_vars/example.yml

@@ -12,12 +12,19 @@ Environment=NAME=%i
 Environment=SOCKS_PORT=1081
 Environment=SLEEP_START=2
 # Environment=DEBUG=1
+
 Environment=TEXTDIR={{ reality_e2e_textfile_dir }}
 Environment=LOCKFILE=%t/reality-e2e/global.lock
+
+# Engine/binaries (default to sing-box for backward compatibility)
+Environment=ENGINE=sing-box
+Environment=BIN_SING={{ reality_e2e_bin_sing_box | default('/usr/local/bin/sing-box') }}
+Environment=BIN_XRAY={{ reality_e2e_bin_xray | default('/usr/local/bin/xray') }}
 
 # на всякий случай увеличим бюджет времени на старт одной пробы
 TimeoutStartSec=6min
 
+# Per-profile overrides (ENGINE/SOCKS_PORT/TEST_URL/TIMEOUT/etc)
 EnvironmentFile=-{{ reality_e2e_cfg_dir }}/%i.env
 
 ExecStart=/usr/bin/flock -w 300 "${LOCKFILE}" \

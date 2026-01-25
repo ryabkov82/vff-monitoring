@@ -23,12 +23,27 @@ reality_e2e_timer_accuracy: "15s"
 reality_e2e_cfg_dir: "{{ monitoring_root }}/ru-probe/reality"
 
 reality_e2e_defaults:
-  socks_port: 1081
-  flow: ""
   log_level: "warn"
   http_test_url: "https://cp.cloudflare.com/generate_204"
   http_timeout: 8
   cfg_dir: "{{ reality_e2e_cfg_dir }}"
+
+reality_e2e_install_xray: true
+reality_e2e_xray_version: "latest"         # latest или vX.Y.Z
+reality_e2e_xray_install_dir: /usr/local/bin
+reality_e2e_xray_dat_dir: /usr/local/lib/xray
+
+reality_e2e_profile_defaults:
+  reality:
+    engine: sing-box
+    socks_port: 1081
+    flow: "xtls-rprx-vision"
+  xhttp:
+    engine: xray
+    socks_port: 1082
+    tls: true
+    xhttp_mode: "auto"
+    xhttp_path: "/api/v1/sync/"
 
 # пустые плейсхолдеры — чтобы роль не падала при отсутствии group_vars
 reality_e2e_shared:

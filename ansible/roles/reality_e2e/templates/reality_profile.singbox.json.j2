@@ -8,7 +8,7 @@
       "type": "vless",
       "server": "{{ eff_server }}",
       "server_port": 443,
-      "uuid": "{{ reality_e2e_shared.uuid }}",
+      "uuid": "{{ eff_shared.uuid }}",
       "flow": "{{ eff_flow }}",
       "packet_encoding": "xudp",
       "tls": {
@@ -19,8 +19,8 @@
         "utls": { "enabled": true, "fingerprint": "chrome" },
         "reality": {
           "enabled": true,
-          "public_key": "{{ reality_e2e_shared.public_key }}",
-          "short_id": "{{ reality_e2e_shared.short_id }}"
+          "public_key": "{{ eff_shared.public_key }}",
+          "short_id": "{{ eff_shared.short_id }}"
         }
       }
     }
