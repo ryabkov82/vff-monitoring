@@ -1,0 +1,219 @@
+---
+- name: Reality E2E | Ensure unzip present (for xray release zip)
+  tags: [reality_e2e]
+  ansible.builtin.package:
+    name: unzip
+    state: present
+
+- name: Reality E2E | Detect xray asset name by arch
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _xray_asset_name: >-
+      {{
+        {
+          'x86_64': 'linux-64',
+          'amd64':  'linux-64',
+          'aarch64':'linux-arm64-v8a',
+          'arm64':  'linux-arm64-v8a',
+          'armv7l': 'linux-arm32-v7a',
+          'armv6l': 'linux-arm32-v6',
+          'i386':   'linux-32',
+          'i686':   'linux-32',
+          's390x':  'linux-s390x'
+        }.get(ansible_architecture, 'linux-64')
+      }}
+  changed_when: false
+
+- name: Reality E2E | Ensure xray dat dir exists (also for stamp)
+  tags: [reality_e2e]
+  ansible.builtin.file:
+    path: "{{ reality_e2e_xray_dat_dir | default('/usr/local/lib/xray') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Reality E2E | Read installed xray version stamp (if any)
+  tags: [reality_e2e]
+  ansible.builtin.slurp:
+    src: "{{ (reality_e2e_xray_dat_dir | default('/usr/local/lib/xray')) }}/.xray_version"
+  register: _xray_stamp_slurp
+  failed_when: false
+  changed_when: false
+
+- name: Reality E2E | Installed xray tag (from stamp)
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _xray_installed_tag: >-
+      {{
+        (_xray_stamp_slurp.content | default('') | b64decode | trim)
+        if (_xray_stamp_slurp is defined and _xray_stamp_slurp.content is defined)
+        else ''
+      }}
+  changed_when: false
+
+- name: Reality E2E | Determine if xray install can be skipped (pinned versions only)
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _xray_skip_install: >-
+      {{
+        (_xray_installed_tag | length > 0)
+        and
+        ((reality_e2e_xray_version | default('latest')) != 'latest')
+        and
+        (_xray_installed_tag == (reality_e2e_xray_version | default('latest')))
+      }}
+  changed_when: false
+
+- name: Reality E2E | Compute release URLs
+  tags: [reality_e2e]
+  ansible.builtin.set_fact:
+    _xray_zip_name: "Xray-{{ _xray_asset_name }}.zip"
+    _xray_target_tag: "{{ reality_e2e_xray_version | default('latest') }}"
+    _xray_zip_url_pinned: >-
+      https://github.com/XTLS/Xray-core/releases/download/{{ reality_e2e_xray_version }}/Xray-{{ _xray_asset_name }}.zip
+    _xray_zip_url_latest: >-
+      https://github.com/XTLS/Xray-core/releases/latest/download/Xray-{{ _xray_asset_name }}.zip
+  changed_when: false
+
+- name: Reality E2E | Install Xray from GitHub release ZIP
+  when: not _xray_skip_install
+  tags: [reality_e2e]
+  block:
+
+    - name: Reality E2E | Resolve latest redirect (to get real tag)  # no GitHub API
+      when: (reality_e2e_xray_version | default('latest')) == 'latest'
+      tags: [reality_e2e]
+      ansible.builtin.uri:
+        url: "{{ _xray_zip_url_latest }}"
+        method: HEAD
+        follow_redirects: all
+        return_content: false
+        timeout: 20
+      register: _xray_head
+      changed_when: false
+
+    - name: Reality E2E | Compute final URL from redirect chain
+      when: (reality_e2e_xray_version | default('latest')) == 'latest'
+      tags: [reality_e2e]
+      ansible.builtin.set_fact:
+        _xray_final_url: >-
+          {{
+            (
+              (_xray_head.redirected_urls | default([])) | last
+            )
+            | default(_xray_head.location | default(''))
+            | default((_xray_head.url | default('')) | string)
+          }}
+      changed_when: false
+
+    - name: Reality E2E | Debug latest redirect URL (optional)
+      when:
+        - (reality_e2e_xray_version | default('latest')) == 'latest'
+        - reality_e2e_debug | default(false) | bool
+      tags: [reality_e2e]
+      ansible.builtin.debug:
+        msg:
+          head_keys: "{{ _xray_head.keys() | list }}"
+          final_url: "{{ _xray_final_url }}"
+          redirected_urls: "{{ _xray_head.redirected_urls | default([]) }}"
+          location: "{{ _xray_head.location | default('') }}"
+
+    - name: Reality E2E | Set effective target tag (resolved for latest)
+      when: (reality_e2e_xray_version | default('latest')) == 'latest'
+      tags: [reality_e2e]
+      ansible.builtin.set_fact:
+        _xray_target_tag: >-
+          {{
+            (
+              (_xray_final_url | default('') | string)
+              | regex_findall('/releases/download/([^/]+)/')
+              | first
+            )
+            | default('latest')
+          }}
+      changed_when: false
+
+    - name: Reality E2E | Download Xray ZIP (latest)
+      when: (reality_e2e_xray_version | default('latest')) == 'latest'
+      tags: [reality_e2e]
+      ansible.builtin.get_url:
+        url: "{{ _xray_zip_url_latest }}"
+        dest: "/tmp/{{ _xray_zip_name }}"
+        mode: "0644"
+        timeout: 60
+
+    - name: Reality E2E | Download Xray ZIP (pinned)
+      when: (reality_e2e_xray_version | default('latest')) != 'latest'
+      tags: [reality_e2e]
+      ansible.builtin.get_url:
+        url: "{{ _xray_zip_url_pinned }}"
+        dest: "/tmp/{{ _xray_zip_name }}"
+        mode: "0644"
+        timeout: 60
+
+    - name: Reality E2E | Create temp unpack dir
+      tags: [reality_e2e]
+      ansible.builtin.file:
+        path: "/tmp/xray-unpack-{{ _xray_target_tag }}"
+        state: directory
+        mode: "0755"
+
+    - name: Reality E2E | Unarchive Xray ZIP
+      tags: [reality_e2e]
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ _xray_zip_name }}"
+        dest: "/tmp/xray-unpack-{{ _xray_target_tag }}"
+        remote_src: true
+
+    - name: Reality E2E | Install xray binary
+      tags: [reality_e2e]
+      ansible.builtin.copy:
+        src: "/tmp/xray-unpack-{{ _xray_target_tag }}/xray"
+        dest: "{{ reality_e2e_bin_xray | default('/usr/local/bin/xray') }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Reality E2E | Install geoip/geosite (if present)
+      tags: [reality_e2e]
+      ansible.builtin.copy:
+        src: "/tmp/xray-unpack-{{ _xray_target_tag }}/{{ item }}"
+        dest: "{{ reality_e2e_xray_dat_dir | default('/usr/local/lib/xray') }}/{{ item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - geoip.dat
+        - geosite.dat
+      failed_when: false
+
+    - name: Reality E2E | Verify xray runs (version)
+      tags: [reality_e2e]
+      ansible.builtin.command:
+        argv:
+          - "{{ reality_e2e_bin_xray | default('/usr/local/bin/xray') }}"
+          - version
+      register: _xray_ver
+      changed_when: false
+
+    - name: Reality E2E | Write version stamp (effective tag)
+      tags: [reality_e2e]
+      ansible.builtin.copy:
+        dest: "{{ (reality_e2e_xray_dat_dir | default('/usr/local/lib/xray')) }}/.xray_version"
+        content: "{{ _xray_target_tag }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Reality E2E | Cleanup temp files
+      tags: [reality_e2e]
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/{{ _xray_zip_name }}"
+        - "/tmp/xray-unpack-{{ _xray_target_tag }}"
+      failed_when: false

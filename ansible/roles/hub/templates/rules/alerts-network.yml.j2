@@ -62,8 +62,8 @@ groups:
     expr: |-
       (
         8 * sum by (instance, device) (
-          rate(node_network_receive_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*"}[5m]) +
-          rate(node_network_transmit_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*"}[5m])
+          rate(node_network_receive_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*|ifb.*"}[5m]) +
+          rate(node_network_transmit_bytes_total{device!~"lo|wg.*|docker.*|veth.*|br.*|tun.*|tap.*|ifb.*"}[5m])
         )
       ) > 5e6
       unless on (instance, device)

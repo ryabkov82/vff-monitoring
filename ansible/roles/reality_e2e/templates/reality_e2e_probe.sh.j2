@@ -1,25 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-[[ "${DEBUG:-0}" = "1" ]] && echo "[args] CFG=$1 | NAME=$2 | SOCKS_PORT=$3" >&2
+[[ "${DEBUG:-0}" = "1" ]] && echo "[args] CFG=$1 | NAME=$2 | SOCKS_PORT=$3 | ENGINE=${ENGINE:-}" >&2
 
 CFG="$1"
 NAME="$2"
 SOCKS_PORT="${3:-1081}"
-TEXTDIR="{{ reality_e2e_textfile_dir }}"
+TEXTDIR="${TEXTDIR:-{{ reality_e2e_textfile_dir }}}"
 OUT="${TEXTDIR}/reality_e2e.prom"
 
 TEST_URL="${TEST_URL:-https://cp.cloudflare.com/generate_204}"
 TIMEOUT="${TIMEOUT:-8}"
 SLEEP_START="${SLEEP_START:-0.6}"
 
+ENGINE="${ENGINE:-sing-box}"
+BIN_SING="${BIN_SING:-{{ reality_e2e_bin_sing_box | default('/usr/local/bin/sing-box') }}}"
+BIN_XRAY="${BIN_XRAY:-{{ reality_e2e_bin_xray | default('/usr/local/bin/xray') }}}"
+
 mkdir -p "$TEXTDIR"
 tmpdir="$(mktemp -d)"
 cleanup(){ rm -rf "$tmpdir"; }
 trap cleanup EXIT
 
-sing-box run -c "$CFG" >"$tmpdir/sing.log" 2>&1 &
-pid=$!
+start_engine() {
+  case "$ENGINE" in
+    sing-box|singbox)
+      "$BIN_SING" run -c "$CFG" >"$tmpdir/engine.log" 2>&1 &
+      ;;
+    xray)
+      "$BIN_XRAY" run -config "$CFG" >"$tmpdir/engine.log" 2>&1 &
+      ;;
+    *)
+      echo "[e2e] Unknown ENGINE=$ENGINE (expected sing-box|xray)" >&2
+      return 2
+      ;;
+  esac
+  echo $!
+}
+
+pid="$(start_engine)"
+
+# небольшая пауза (у вас была переменная, но не использовалась)
+sleep "$SLEEP_START" || true
 
 deadline=$(( $(date +%s) + 5 ))
 while ! ss -ltn "( sport = :${SOCKS_PORT} )" | grep -q LISTEN; do
@@ -28,8 +50,8 @@ while ! ss -ltn "( sport = :${SOCKS_PORT} )" | grep -q LISTEN; do
 done
 
 if ! ss -ltn "( sport = :${SOCKS_PORT} )" | grep -q LISTEN; then
-  echo "[e2e] SOCKS ${SOCKS_PORT} не поднялся. Лог sing-box (первые 200 строк):" >&2
-  sed -n '1,200p' "$tmpdir/sing.log" >&2 || true
+  echo "[e2e] SOCKS ${SOCKS_PORT} не поднялся (ENGINE=$ENGINE). Лог (первые 200 строк):" >&2
+  sed -n '1,200p' "$tmpdir/engine.log" >&2 || true
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   exit 1

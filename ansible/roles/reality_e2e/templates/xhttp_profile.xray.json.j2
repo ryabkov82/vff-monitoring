@@ -1,0 +1,51 @@
+{
+  "log": { "loglevel": "{{ eff_log_level | default('warning') }}" },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": {{ eff_socks_port }},
+      "protocol": "socks",
+      "settings": { "udp": true }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "{{ eff_server }}",
+            "port": 443,
+            "users": [
+              { "id": "{{ reality_e2e_shared.uuid }}", "encryption": "none" }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": {{ (eff_xhttp_tls | default(true)) | ternary('"tls"', '"none"') }},
+        {% if (eff_xhttp_tls | default(true)) %}
+        "tlsSettings": {
+          "serverName": "{{ eff_sni }}",
+          "allowInsecure": false
+        },
+        {% endif %}
+        "xhttpSettings": {
+          "host": "{{ eff_sni }}",
+          "path": "{{ eff_xhttp_path | default('/api/v1/sync/') }}",
+          "mode": "{{ eff_xhttp_mode | default('auto') }}"
+        }
+      }
+    },
+    { "tag": "direct", "protocol": "freedom" }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      { "type": "field", "inboundTag": ["socks-in"], "outboundTag": "proxy" }
+    ]
+  }
+}

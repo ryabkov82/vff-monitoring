@@ -3,3 +3,8 @@
   ansible.builtin.package:
     name: util-linux
     state: present
+
+- name: Reality E2E | Install Xray (optional)
+  ansible.builtin.import_tasks: 06_install_xray.yml
+  when: reality_e2e_install_xray | default(false) | bool
+  tags: [reality_e2e]
