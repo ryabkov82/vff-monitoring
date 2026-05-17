@@ -3,6 +3,12 @@ Address = {{ hub_wg_ip }}/24
 ListenPort = {{ wg_listen_port }}
 PrivateKey = {{ hub_wg_privkey_runtime }}
 MTU = {{ wg_mtu }}
+{% for route in wg_telegram_routes | default([]) %}
+PostUp = ip route replace {{ route }} via {{ wg_telegram_gateway_ip }} dev %i
+{% endfor %}
+{% for route in wg_telegram_routes | default([]) %}
+PostDown = ip route del {{ route }} via {{ wg_telegram_gateway_ip }} dev %i || true
+{% endfor %}
 
 {# Собираем список всех пиров из групп #}
 {% set vpn_hosts    = groups['vpn']            | default([]) %}
@@ -20,7 +26,11 @@ MTU = {{ wg_mtu }}
 [Peer]
 # {{ node_name }}
 PublicKey = {{ node_pub }}
-AllowedIPs = {{ node_ip }}/32
+{% set allowed_ips = [node_ip ~ '/32'] %}
+{% if wg_telegram_gateway_ip is defined and node_ip == wg_telegram_gateway_ip %}
+{% set allowed_ips = allowed_ips + (wg_telegram_routes | default([])) %}
+{% endif %}
+AllowedIPs = {{ allowed_ips | join(', ') }}
 PersistentKeepalive = 25
 
   {% endif %}
