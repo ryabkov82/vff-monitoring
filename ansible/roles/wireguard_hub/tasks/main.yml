@@ -29,12 +29,12 @@
       when: hub_wg_private_key is defined and (hub_wg_private_key | length) > 0
       no_log: true
 
-    - name: Compute hub public key from provided private key (once)
+    - name: Compute hub public key from provided private key
       ansible.builtin.shell: "wg pubkey < /etc/wireguard/{{ wg_iface }}.key > /etc/wireguard/{{ wg_iface }}.pub"
       args:
-        creates: "/etc/wireguard/{{ wg_iface }}.pub"
         executable: /bin/bash
       when: hub_wg_private_key is defined and (hub_wg_private_key | length) > 0
+      changed_when: false
 
     # --- Сценарий B: ключ не задан — генерируем пару идемпотентно ---
     - name: Generate hub keypair if missing (private+public)

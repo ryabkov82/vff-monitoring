@@ -63,3 +63,15 @@ am_route_group_by: ['alertname','instance']
 am_route_group_wait: "30s"
 am_route_group_interval: "5m"
 am_route_repeat_interval: "5h"
+
+# Telegram API routes via fr-mrs-1 over wgmon0.
+# Needed for Alertmanager Telegram notifications from monitoring hub.
+wg_telegram_gateway_ip: 10.77.0.9
+
+wg_telegram_routes:
+  - 149.154.160.0/20
+  - 91.108.4.0/22
+  - 91.108.8.0/22
+  - 91.108.12.0/22
+  - 91.108.16.0/22
+  - 91.108.56.0/22

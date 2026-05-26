@@ -16,7 +16,7 @@
         {% if eff_sni is defined and (eff_sni | length) > 0 %}
         "server_name": "{{ eff_sni }}",
         {% endif %}
-        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "utls": { "enabled": true, "fingerprint": "{{ eff_fingerprint | default('chrome') }}" },
         "reality": {
           "enabled": true,
           "public_key": "{{ eff_shared.public_key }}",
