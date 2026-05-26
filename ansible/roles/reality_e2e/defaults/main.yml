@@ -38,12 +38,14 @@ reality_e2e_profile_defaults:
     engine: sing-box
     socks_port: 1081
     flow: "xtls-rprx-vision"
+    fingerprint: "chrome"
   xhttp:
     engine: xray
     socks_port: 1082
     tls: true
     xhttp_mode: "auto"
     xhttp_path: "/api/v1/sync/"
+    fingerprint: "chrome"
 
 # пустые плейсхолдеры — чтобы роль не падала при отсутствии group_vars
 reality_e2e_shared:

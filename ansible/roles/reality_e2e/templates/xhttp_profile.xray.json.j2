@@ -30,7 +30,8 @@
         {% if (eff_xhttp_tls | default(true)) %}
         "tlsSettings": {
           "serverName": "{{ eff_sni }}",
-          "allowInsecure": false
+          "allowInsecure": false,
+          "fingerprint": "{{ eff_fingerprint | default('chrome') }}"
         },
         {% endif %}
         "xhttpSettings": {

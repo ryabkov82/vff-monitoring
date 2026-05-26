@@ -141,7 +141,11 @@
                           'flow': (
                             hostvars[item].reality.flow
                             | default(reality_e2e_profile_defaults.reality.flow | default(''))
-                          )
+                          ),
+                          'fingerprint': (
+                            hostvars[item].reality.fingerprint
+                            | default(reality_e2e_profile_defaults.reality.fingerprint | default('firefox'))
+                          )                          
                         },
                         {}
                       )
@@ -164,7 +168,11 @@
                           'xhttp_tls': (
                             hostvars[item].reality.xhttp_tls
                             | default(reality_e2e_profile_defaults.xhttp.tls | default(true))
-                          )
+                          ),
+                          'fingerprint': (
+                            hostvars[item].reality.fingerprint
+                            | default(reality_e2e_profile_defaults.xhttp.fingerprint | default('firefox'))
+                          )                          
                         },
                         {}
                       )
@@ -237,6 +245,7 @@
     eff_xhttp_mode: "{{ item.reality.xhttp_mode | default(reality_e2e_profile_defaults.xhttp.xhttp_mode | default('auto')) }}"
     eff_xhttp_tls: "{{ item.reality.xhttp_tls | default(reality_e2e_profile_defaults.xhttp.tls | default(true)) }}"
     eff_shared: "{{ item.reality.shared_effective }}"
+    eff_fingerprint: "{{ item.reality.fingerprint | default('firefox') }}"
   tags: [reality_e2e]
 
 - name: Reality E2E | Render per-node ENV file
