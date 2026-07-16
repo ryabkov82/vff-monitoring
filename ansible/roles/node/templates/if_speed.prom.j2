@@ -1,3 +1,9 @@
 # HELP if_speed_bps Interface nominal speed in bits per second
 # TYPE if_speed_bps gauge
 if_speed_bps{device="{{ node_uplink_device_effective }}"} {{ node_uplink_speed_bps_effective }}
+
+# HELP if_speed_monitoring_ignored Interface intentionally excluded from speed monitoring
+# TYPE if_speed_monitoring_ignored gauge
+{% for device in monitoring_ignored_interfaces | default([]) %}
+if_speed_monitoring_ignored{device="{{ device }}"} 1
+{% endfor %}

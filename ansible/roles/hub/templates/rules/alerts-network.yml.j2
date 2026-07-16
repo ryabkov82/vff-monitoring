@@ -67,7 +67,11 @@ groups:
         )
       ) > 5e6
       unless on (instance, device)
-      max by (instance, device) (if_speed_bps)
+      (
+        max by (instance, device) (if_speed_bps)
+        or
+        max by (instance, device) (if_speed_monitoring_ignored)
+      )
     for: 15m
     labels:
       severity: warning
