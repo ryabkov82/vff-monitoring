@@ -176,7 +176,6 @@ endif
 	  echo "   Pass WG_IP=<ip> or define host_vars/$(HOST).yml with wg_ip."; \
 	  exit 2; \
 	fi; \
-	# срежем возможную маску /xx
 	WG_IP_TMP=$$(echo "$$WG_IP_TMP" | sed 's,/.*$$,,'); \
 	echo "   WG_IP=$$WG_IP_TMP"; \
 	PORT="$${NODE_PORT:-9100}"; \
