@@ -2,6 +2,12 @@
   hosts: vpn
   roles:
     - { role: wireguard_node, tags: [wg, wg_node] }
+    - role: telegram_gateway
+      tags: [telegram_gateway]
+      when:
+        - wg_ip is defined
+        - hostvars[groups['hub'][0]].wg_telegram_gateway_ip is defined
+        - (wg_ip | string) == (hostvars[groups['hub'][0]].wg_telegram_gateway_ip | string)
     - { role: node_exporter, tags: [node_exporter] }
     - { role: node, tags: [node] }
     - { role: speedtest_ookla, tags: [speedtest_ookla] }

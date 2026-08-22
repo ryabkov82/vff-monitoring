@@ -1,0 +1,5 @@
+telegram_gateway_wg_iface: "{{ wg_iface | default('wgmon0') }}"
+telegram_gateway_uplink_device: "{{ uplink_device | default(ansible_default_ipv4.interface, true) }}"
+telegram_gateway_source_ip: "{{ hostvars[groups['hub'][0]].hub_wg_ip }}"
+
+telegram_gateway_sysctl_conf: /etc/sysctl.d/90-vff-telegram-gateway.conf
