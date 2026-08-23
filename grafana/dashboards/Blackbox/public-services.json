@@ -155,7 +155,7 @@
           "editorMode": "code",
           "expr": "bb:http:avail:ratio:2m{name=~\"$name\", service=~\"$service\", component=~\"$component\"} * 100",
           "instant": true,
-          "legendFormat": "{{name}} / {{instance}}",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
@@ -186,7 +186,7 @@
               }
             ]
           },
-          "unit": "d"
+          "unit": "suffix:d"
         },
         "overrides": []
       },
@@ -220,7 +220,7 @@
           "editorMode": "code",
           "expr": "(probe_ssl_earliest_cert_expiry{job=\"blackbox_http\", name=~\"$name\", service=~\"$service\", component=~\"$component\"} - time()) / 86400",
           "instant": true,
-          "legendFormat": "{{name}} / {{instance}}",
+          "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
@@ -573,7 +573,7 @@
           "datasource": "Prometheus",
           "editorMode": "code",
           "expr": "probe_success{job=\"blackbox_http\", name=~\"$name\", service=~\"$service\", component=~\"$component\"}",
-          "legendFormat": "{{name}} / {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
