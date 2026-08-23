@@ -4,9 +4,7 @@
     dest: "{{ monitoring_root }}/docker-compose.yml"
     mode: "0644"
   notify:
-    - Restart services
-  vars:
-    services: null
+    - Restart monitoring stack
 
 - name: Ensure docker compose stack is up
   community.docker.docker_compose_v2:
