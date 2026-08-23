@@ -66,6 +66,23 @@ scrape_configs:
         replacement: '$1'
         target_label: target_host
 
+  - job_name: "blackbox_http"
+    metrics_path: /probe
+    scrape_timeout: 10s
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/bb-http.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [module]
+        target_label: __param_module
+      - source_labels: [probe_instance]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:{{ blackbox_port }}
+      - regex: probe_instance
+        action: labeldrop
+
   - job_name: "ru-probe"
     honor_labels: true
     file_sd_configs:

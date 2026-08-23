@@ -1,0 +1,91 @@
+groups:
+- name: public-http
+  rules:
+    # Scrape down or probe failure that is not an origin 5xx (those are PublicHttp5xx).
+    - alert: PublicHttpDown
+      expr: |
+        up{job="blackbox_http"} == 0
+        or
+        (
+          probe_success{job="blackbox_http"} == 0
+          unless on (job, instance, name, service, component, module)
+          (
+            probe_http_status_code{job="blackbox_http"} >= 500
+            and probe_http_status_code{job="blackbox_http"} < 600
+          )
+        )
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: |
+          {% raw %}Public HTTP недоступен: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.
+          Scrape up=0 или probe_success=0 (DNS/TCP/TLS/timeout/неожиданный статус/заголовок/тело).
+          Ответы 5xx покрывает PublicHttp5xx.{% endraw %}
+
+    - alert: PublicHttp5xx
+      expr: |
+        probe_http_status_code{job="blackbox_http"} >= 500
+        and probe_http_status_code{job="blackbox_http"} < 600
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: |
+          {% raw %}Public HTTP 5xx: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.
+          Код ответа {{ $value }} (5xx).{% endraw %}
+
+    - alert: PublicHttpSlow
+      expr: (bb:http:latency:p95:5m > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
+      for: 10m
+      labels:
+        severity: info
+        notify: off
+      annotations:
+        summary: |
+          {% raw %}Медленный public HTTP (статистика): {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}p95 HTTP > 1.0s при доступности > 90% (10 минут). service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}. notify=off.{% endraw %}
+
+    - alert: PublicHttpSlowSustained30m
+      expr: (bb:http:latency:p95:5m > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}Медленный public HTTP устойчиво ≥30м: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}p95 HTTP > 1.0s держится не менее 30 минут при доступности > 90%. service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.{% endraw %}
+
+    - alert: PublicTlsCertExpiring
+      expr: |
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) >= (3 * 24 * 3600)
+        and
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) < (14 * 24 * 3600)
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: |
+          {% raw %}TLS сертификат истекает <14д: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.
+          До истечения {{ $value | humanizeDuration }}.{% endraw %}
+
+    - alert: PublicTlsCertExpiringCritical
+      expr: |
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) < (3 * 24 * 3600)
+      for: 30m
+      labels:
+        severity: critical
+      annotations:
+        summary: |
+          {% raw %}TLS сертификат истекает <3д: {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.instance }}{{ end }}{% endraw %}
+        description: |
+          {% raw %}service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.
+          До истечения {{ $value | humanizeDuration }}.{% endraw %}

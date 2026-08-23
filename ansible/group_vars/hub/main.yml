@@ -75,3 +75,56 @@ wg_telegram_routes:
   - 91.108.12.0/22
   - 91.108.16.0/22
   - 91.108.56.0/22
+
+# Public/business HTTPS probes (hub Blackbox). Subscription shortUuid is vault-only.
+public_http_subscription_short_uuid: "{{ vault_public_http_monitoring_subscription_short_uuid }}"
+
+public_http_targets:
+  - name: vff-site
+    service: vff
+    component: site
+    module: http_2xx
+    probe_instance: vpn-for-friends.com
+    url: https://vpn-for-friends.com
+  - name: vff-portal
+    service: vff
+    component: portal
+    module: http_2xx
+    probe_instance: vff.portalbase.link
+    url: https://vff.portalbase.link/account
+  - name: vff-account-redirect
+    service: vff
+    component: portal-redirect
+    module: http_redirect_vff_portal
+    probe_instance: vpn-for-friends.com/account
+    url: https://vpn-for-friends.com/account
+  - name: vff-subscription
+    service: vff
+    component: subscription
+    module: http_subscription_html
+    probe_instance: sub.vpn-for-friends.com
+    url: "https://sub.vpn-for-friends.com/{{ public_http_subscription_short_uuid }}"
+  - name: fc-site
+    service: friends-connect
+    component: site
+    module: http_2xx
+    probe_instance: friends-connect.club
+    url: https://friends-connect.club
+  - name: fc-account-redirect
+    service: friends-connect
+    component: portal-redirect
+    module: http_redirect_fc_portal
+    probe_instance: friends-connect.club/account
+    url: https://friends-connect.club/account
+  - name: fc-portal
+    service: friends-connect
+    component: portal
+    module: http_2xx
+    probe_instance: fc.portalbase.link
+    url: https://fc.portalbase.link/account
+  - name: subscription-next
+    service: shared
+    component: subscription
+    module: http_subscription_html
+    probe_instance: sub.portalbase.link
+    url: "https://sub.portalbase.link/{{ public_http_subscription_short_uuid }}"

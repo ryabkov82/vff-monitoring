@@ -30,3 +30,13 @@ groups:
     # (опц.) среднее за 5 минут — вдруг пригодится для графиков/сравнений
     - record: bb:tcp443:latency:avg:5m
       expr: avg_over_time(probe_duration_seconds{job="blackbox_tcp443"}[5m])
+
+    # Public/business HTTPS (do not merge with tcp443 series)
+    - record: bb:http:avail:ratio:2m
+      expr: avg_over_time(probe_success{job="blackbox_http"}[2m])
+
+    - record: bb:http:latency:p95:5m
+      expr: quantile_over_time(0.95, probe_duration_seconds{job="blackbox_http"}[5m])
+
+    - record: bb:http:latency:avg:5m
+      expr: avg_over_time(probe_duration_seconds{job="blackbox_http"}[5m])
