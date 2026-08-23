@@ -40,7 +40,7 @@ groups:
           Код ответа {{ $value }} (5xx).{% endraw %}
 
     - alert: PublicHttpSlow
-      expr: (bb:http:latency:p95:5m > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
+      expr: (bb:http:latency:p95:5m{component!="portal-redirect"} > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
       for: 10m
       labels:
         severity: info
@@ -52,7 +52,7 @@ groups:
           {% raw %}p95 HTTP > 1.0s при доступности > 90% (10 минут). service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}. notify=off.{% endraw %}
 
     - alert: PublicHttpSlowSustained30m
-      expr: (bb:http:latency:p95:5m > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
+      expr: (bb:http:latency:p95:5m{component!="portal-redirect"} > 1.0) and on (instance, name) (bb:http:avail:ratio:2m > 0.9)
       for: 30m
       labels:
         severity: warning
@@ -64,9 +64,9 @@ groups:
 
     - alert: PublicTlsCertExpiring
       expr: |
-        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) >= (3 * 24 * 3600)
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http", component!="portal-redirect"} - time()) >= (3 * 24 * 3600)
         and
-        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) < (14 * 24 * 3600)
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http", component!="portal-redirect"} - time()) < (14 * 24 * 3600)
       for: 1h
       labels:
         severity: warning
@@ -79,7 +79,7 @@ groups:
 
     - alert: PublicTlsCertExpiringCritical
       expr: |
-        (probe_ssl_earliest_cert_expiry{job="blackbox_http"} - time()) < (3 * 24 * 3600)
+        (probe_ssl_earliest_cert_expiry{job="blackbox_http", component!="portal-redirect"} - time()) < (3 * 24 * 3600)
       for: 30m
       labels:
         severity: critical
@@ -89,3 +89,16 @@ groups:
         description: |
           {% raw %}service={{ $labels.service }} component={{ $labels.component }} instance={{ $labels.instance }}.
           До истечения {{ $value | humanizeDuration }}.{% endraw %}
+
+    # Coverage of the configured synthetic set. PublicHttpDown cannot fire for a
+    # missing series, so this catches file_sd/config drop of a target.
+    - alert: PublicHttpTargetCountMismatch
+      expr: (count(up{job="blackbox_http"}) or vector(0)) != {{ public_http_targets | length }}
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: Неполный набор public HTTP probes
+        description: |
+          {% raw %}current={{ $value }}{% endraw %}, expected={{ public_http_targets | length }}.
+          Monitoring coverage degraded: job blackbox_http target count != configured public_http_targets.
