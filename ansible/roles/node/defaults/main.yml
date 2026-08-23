@@ -25,6 +25,9 @@ node_uplink_default_speed_bps: 1000000000   # 1 Gbit/s
 # включить публикацию if_speed_bps через textfile
 node_if_speed_textfile_enabled: true
 
+# Интерфейсы, намеренно исключённые из контроля MissingIfSpeed
+monitoring_ignored_interfaces: []
+
 # === Reality (XRAY/Marzban) textfile exporter ===
 node_reality_enabled: true
 

@@ -112,7 +112,7 @@ flogs-%: ## Следить за логами конкретного сервис
 # ---------------------------
 # WIREGUARD: УЗЛЫ + ХАБ
 # ---------------------------
-.PHONY: wg-node wg-hub wg wg-status wg-show-% add-node add-node-check add-node-all
+.PHONY: wg-node wg-hub wg wg-status wg-show-% telegram-gateway add-node add-node-check add-node-all
 
 wg-node: ## Применить только роль wireguard_node на всех vpn-узлах (tag: wg_node)
 	@# Пример: make wg-node
@@ -134,6 +134,13 @@ wg-status: ## Показать 'wg show' на хабе и на узлах
 wg-show-%: ## Показать 'wg show' на конкретном хосте (по имени)
 	@# Пример: make wg-show-nl-ams-1
 	ansible -i $(INVENTORY) $* -m shell -a 'wg show' $(ANSIBLE_FLAGS) || true
+
+telegram-gateway: ## Применить роль telegram_gateway на HOST (Telegram egress NAT)
+	@# Пример: make telegram-gateway HOST=de-fra-1
+ifndef HOST
+	$(error Usage: make telegram-gateway HOST=<hostname> [ANSIBLE_FLAGS="..."])
+endif
+	$(ANSIBLE) -i $(INVENTORY) $(PLAY_SITE) --limit "$(HOST)" --tags telegram_gateway $(ANSIBLE_FLAGS)
 
 add-node: ## Онбординг новой ноды: WG + агенты (node+node_exporter+speedtest) на HOST -> wg_hub на хабе -> hub bundle + ru_probe на ru_zondes
 	@# Пример: make add-node HOST=nl-ams-2
@@ -176,7 +183,6 @@ endif
 	  echo "   Pass WG_IP=<ip> or define host_vars/$(HOST).yml with wg_ip."; \
 	  exit 2; \
 	fi; \
-	# срежем возможную маску /xx
 	WG_IP_TMP=$$(echo "$$WG_IP_TMP" | sed 's,/.*$$,,'); \
 	echo "   WG_IP=$$WG_IP_TMP"; \
 	PORT="$${NODE_PORT:-9100}"; \

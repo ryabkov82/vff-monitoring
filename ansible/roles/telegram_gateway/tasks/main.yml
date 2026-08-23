@@ -1,0 +1,187 @@
+- name: Telegram gateway | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - telegram_gateway_source_ip is defined
+      - telegram_gateway_source_ip | length > 0
+      - telegram_gateway_wg_iface is defined
+      - telegram_gateway_wg_iface | length > 0
+      - telegram_gateway_uplink_device is defined
+      - telegram_gateway_uplink_device | length > 0
+    fail_msg: >-
+      Telegram gateway role requires hub_wg_ip on hub, wg/uplink interfaces,
+      and wg_ip matching wg_telegram_gateway_ip.
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Validate network interfaces exist
+  ansible.builtin.assert:
+    that:
+      - telegram_gateway_wg_iface in ansible_facts.interfaces
+      - telegram_gateway_uplink_device in ansible_facts.interfaces
+    fail_msg: >-
+      Telegram gateway interfaces not found on {{ inventory_hostname }}:
+      wg={{ telegram_gateway_wg_iface }}, uplink={{ telegram_gateway_uplink_device }}.
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Ensure persistent and runtime ip_forward
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    sysctl_file: "{{ telegram_gateway_sysctl_conf }}"
+    sysctl_set: true
+    reload: false
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Ensure iptables-persistent (Debian/Ubuntu)
+  when: ansible_facts.os_family == "Debian"
+  ansible.builtin.apt:
+    name: iptables-persistent
+    state: present
+    update_cache: true
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Check FORWARD wg->uplink rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -C
+      - FORWARD
+      - -i
+      - "{{ telegram_gateway_wg_iface }}"
+      - -s
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -o
+      - "{{ telegram_gateway_uplink_device }}"
+      - -j
+      - ACCEPT
+  register: tg_fwd_wg_out_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Insert FORWARD wg->uplink rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -I
+      - FORWARD
+      - "1"
+      - -i
+      - "{{ telegram_gateway_wg_iface }}"
+      - -s
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -o
+      - "{{ telegram_gateway_uplink_device }}"
+      - -j
+      - ACCEPT
+  when: tg_fwd_wg_out_check.rc != 0
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Check FORWARD uplink->wg return rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -C
+      - FORWARD
+      - -i
+      - "{{ telegram_gateway_uplink_device }}"
+      - -o
+      - "{{ telegram_gateway_wg_iface }}"
+      - -d
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -m
+      - conntrack
+      - --ctstate
+      - RELATED,ESTABLISHED
+      - -j
+      - ACCEPT
+  register: tg_fwd_uplink_in_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Insert FORWARD uplink->wg return rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -I
+      - FORWARD
+      - "1"
+      - -i
+      - "{{ telegram_gateway_uplink_device }}"
+      - -o
+      - "{{ telegram_gateway_wg_iface }}"
+      - -d
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -m
+      - conntrack
+      - --ctstate
+      - RELATED,ESTABLISHED
+      - -j
+      - ACCEPT
+  when: tg_fwd_uplink_in_check.rc != 0
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Check NAT POSTROUTING MASQUERADE rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -t
+      - nat
+      - -C
+      - POSTROUTING
+      - -s
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -o
+      - "{{ telegram_gateway_uplink_device }}"
+      - -j
+      - MASQUERADE
+  register: tg_nat_masq_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Append NAT POSTROUTING MASQUERADE rule
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - "5"
+      - -t
+      - nat
+      - -A
+      - POSTROUTING
+      - -s
+      - "{{ telegram_gateway_source_ip }}/32"
+      - -o
+      - "{{ telegram_gateway_uplink_device }}"
+      - -j
+      - MASQUERADE
+  when: tg_nat_masq_check.rc != 0
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Persist iptables rules
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: false
+  when: not ansible_check_mode
+  tags: [telegram_gateway]
+
+- name: Telegram gateway | Ensure netfilter-persistent enabled on boot
+  when: ansible_facts.os_family == "Debian"
+  ansible.builtin.service:
+    name: netfilter-persistent
+    enabled: true
+  tags: [telegram_gateway]
