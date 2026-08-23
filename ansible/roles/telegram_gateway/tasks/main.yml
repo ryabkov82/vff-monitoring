@@ -59,6 +59,7 @@
   register: tg_fwd_wg_out_check
   changed_when: false
   failed_when: false
+  check_mode: false
   tags: [telegram_gateway]
 
 - name: Telegram gateway | Insert FORWARD wg->uplink rule
@@ -104,6 +105,7 @@
   register: tg_fwd_uplink_in_check
   changed_when: false
   failed_when: false
+  check_mode: false
   tags: [telegram_gateway]
 
 - name: Telegram gateway | Insert FORWARD uplink->wg return rule
@@ -149,6 +151,7 @@
   register: tg_nat_masq_check
   changed_when: false
   failed_when: false
+  check_mode: false
   tags: [telegram_gateway]
 
 - name: Telegram gateway | Append NAT POSTROUTING MASQUERADE rule
@@ -173,6 +176,7 @@
 - name: Telegram gateway | Persist iptables rules
   ansible.builtin.command: netfilter-persistent save
   changed_when: false
+  when: not ansible_check_mode
   tags: [telegram_gateway]
 
 - name: Telegram gateway | Ensure netfilter-persistent enabled on boot
