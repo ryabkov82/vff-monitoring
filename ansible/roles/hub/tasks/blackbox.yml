@@ -4,6 +4,4 @@
     dest: "{{ monitoring_root }}/blackbox/blackbox.yml"
     mode: "0644"
   notify:
-    - Restart services
-  vars:
-    services: ["blackbox"]
+    - Restart blackbox

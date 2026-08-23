@@ -1,12 +1,21 @@
 ---
-# Рестарт через compose v2 (всего стека или указанных services)
-- name: Restart services
-  listen: Restart services
+# Explicit compose restart scopes. Do not pass services from notifying tasks.
+
+- name: Restart monitoring stack
+  listen: Restart monitoring stack
   when: not ansible_check_mode
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: restarted
-    services: "{{ services | default(omit, true) }}"
+
+- name: Restart blackbox
+  listen: Restart blackbox
+  when: not ansible_check_mode
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    state: restarted
+    services:
+      - blackbox
 
 # ===== Prometheus =====
 - name: Prometheus HTTP reload
@@ -31,7 +40,8 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: restarted
-    services: ["prometheus"]
+    services:
+      - prometheus
 
 # ===== Alertmanager =====
 - name: Alertmanager HTTP reload
@@ -56,7 +66,8 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_root }}"
     state: restarted
-    services: ["alertmanager"]
+    services:
+      - alertmanager
 
 # ===== Grafana =====
 - name: Restart grafana
