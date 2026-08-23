@@ -25,3 +25,7 @@ reality_e2e_shared:
 # === Alertmanager → Telegram ===
 am_telegram_bot_token: ""     # токен бота, напр. '123456:ABC-DEF...'
 am_telegram_chat_id: ""       # ID чата/канала (число или строка); лучше хранить как строку
+
+# Technical Remnawave user `monitoring` shortUuid (not a real client).
+# Live value: ansible/group_vars/hub/vault_public_http.yml (separate vault file).
+vault_public_http_monitoring_subscription_short_uuid: ""

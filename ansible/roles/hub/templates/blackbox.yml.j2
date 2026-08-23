@@ -10,3 +10,74 @@ modules:
     timeout: {{ blackbox_tcp_timeout | default('5s') }}
     tcp:
       preferred_ip_protocol: {{ blackbox_tcp_proto | default('ip4') }}
+
+  # Public/business HTTPS: landing and cabinet pages. No extra headers.
+  # Schema: Blackbox Exporter v0.25.0 uses valid_status_codes (not valid_http_status_codes).
+  http_2xx:
+    prober: http
+    timeout: {{ blackbox_http_timeout | default('8s') }}
+    http:
+      preferred_ip_protocol: {{ blackbox_http_proto | default('ip4') }}
+      fail_if_not_ssl: true
+      follow_redirects: false
+      valid_status_codes: [200]
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+
+  # Subscription Page HTML (not the text/plain client payload).
+  http_subscription_html:
+    prober: http
+    timeout: {{ blackbox_http_timeout | default('8s') }}
+    http:
+      preferred_ip_protocol: {{ blackbox_http_proto | default('ip4') }}
+      fail_if_not_ssl: true
+      follow_redirects: false
+      valid_status_codes: [200]
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+      headers:
+        Accept: text/html
+        User-Agent: Mozilla/5.0 VFF-Monitoring
+      fail_if_header_not_matches:
+        - header: Content-Type
+          regexp: '(?i)text/html'
+          allow_missing: false
+      fail_if_body_not_matches_regexp:
+        - '(?i)<title[^>]*>\s*Subscription\s*</title>'
+
+  # Landing → VFF portal root. Exact Location, no follow.
+  # Real landing semantics: /account → https://vff.portalbase.link (not /account).
+  http_redirect_vff_portal:
+    prober: http
+    timeout: {{ blackbox_http_timeout | default('8s') }}
+    http:
+      preferred_ip_protocol: {{ blackbox_http_proto | default('ip4') }}
+      fail_if_not_ssl: true
+      follow_redirects: false
+      valid_status_codes: [302]
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+      fail_if_header_not_matches:
+        - header: Location
+          regexp: '^https://vff\.portalbase\.link$'
+          allow_missing: false
+
+  # Landing → Friends Connect cabinet. Exact Location, no follow.
+  http_redirect_fc_portal:
+    prober: http
+    timeout: {{ blackbox_http_timeout | default('8s') }}
+    http:
+      preferred_ip_protocol: {{ blackbox_http_proto | default('ip4') }}
+      fail_if_not_ssl: true
+      follow_redirects: false
+      valid_status_codes: [302]
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+      fail_if_header_not_matches:
+        - header: Location
+          regexp: '^https://fc\.portalbase\.link/account$'
+          allow_missing: false

@@ -1,0 +1,18 @@
+{% if (public_http_subscription_short_uuid | default('') | trim | length) == 0 %}
+{{ none | mandatory('vault_public_http_monitoring_subscription_short_uuid must be set') }}
+{% endif %}
+[
+{% for t in public_http_targets | default([]) %}
+  {
+    "targets": ["{{ t.url }}"],
+    "labels": {
+      "name": "{{ t.name }}",
+      "service": "{{ t.service }}",
+      "component": "{{ t.component }}",
+      "module": "{{ t.module }}",
+      "probe_instance": "{{ t.probe_instance }}"
+    }
+  }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+]
