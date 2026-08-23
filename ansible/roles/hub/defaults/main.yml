@@ -12,6 +12,10 @@ grafana_plugins_dir: "{{ grafana_dir }}/plugins"
 # Откуда читать JSON-дашборды на КОНТРОЛ-ноде (репозиторий)
 grafana_dashboards_repo_dir: "{{ playbook_dir }}/../../grafana/dashboards"
 
+# Opt-in targeted dashboard deploy. Empty = full tree (copy or rsync+delete).
+# Non-empty = copy only these repo-relative paths; never delete.
+grafana_dashboards_selected_files: []
+
 # --- Grafana credentials (safe defaults) ------------------------------
 grafana_admin_user: "admin"
 # Реальный пароль лучше держать в group_vars/vault; null, чтобы не подставлять пустую строку

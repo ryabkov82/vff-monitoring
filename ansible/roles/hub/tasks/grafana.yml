@@ -36,10 +36,89 @@
     group: "472"
   notify: Restart grafana
 
-# Дашборды: hot-reload, без рестартов
+# Дашборды: hot-reload, без рестартов.
+# Empty grafana_dashboards_selected_files → existing full-tree copy/rsync+delete.
+# Non-empty → additive copy of listed relative paths only (no delete, no tree chmod).
+- name: Validate selected Grafana dashboard paths
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - (item | length) > 0
+      - not item.startswith("/")
+      - not item.startswith("\\")
+      - "'..' not in (item | split('/'))"
+      - "'..' not in (item | split('\\\\'))"
+      - item.endswith(".json")
+    fail_msg: "Unsafe or invalid grafana_dashboards_selected_files entry: {{ item }}"
+  loop: "{{ grafana_dashboards_selected_files }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Stat selected Grafana dashboard sources
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.stat:
+    path: "{{ [grafana_dashboards_repo_dir, item] | path_join }}"
+  register: _selected_dash_src
+  loop: "{{ grafana_dashboards_selected_files }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: localhost
+
+- name: Assert selected Grafana dashboard sources exist
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Selected dashboard source missing or not a file: {{ item.item }}"
+  loop: "{{ _selected_dash_src.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Assert selected Grafana dashboard JSON is valid
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.set_fact:
+    _selected_dash_parsed: "{{ lookup('file', [grafana_dashboards_repo_dir, item] | path_join) | from_json }}"
+  loop: "{{ grafana_dashboards_selected_files }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ensure destination directory for selected Grafana dashboard
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.file:
+    path: "{{ [grafana_dashboards_dir, (item | dirname)] | path_join }}"
+    state: directory
+    mode: "0755"
+    owner: "472"
+    group: "472"
+  loop: "{{ grafana_dashboards_selected_files }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Copy selected Grafana dashboard
+  tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length > 0
+  ansible.builtin.copy:
+    src: "{{ [grafana_dashboards_repo_dir, item] | path_join }}"
+    dest: "{{ [grafana_dashboards_dir, item] | path_join }}"
+    owner: "472"
+    group: "472"
+    mode: "0644"
+  loop: "{{ grafana_dashboards_selected_files }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Sync Grafana dashboards (copy)
   tags: [grafana_dashboards]
-  when: not (grafana_dashboards_use_rsync | default(false))
+  when:
+    - not (grafana_dashboards_use_rsync | default(false))
+    - (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.copy:
     src: "{{ grafana_dashboards_repo_dir }}/"
     dest: "{{ grafana_dashboards_dir }}/"
@@ -49,16 +128,19 @@
 
 - name: Mirror Grafana dashboards (rsync, deletes extraneous)
   tags: [grafana_dashboards]
-  when: grafana_dashboards_use_rsync | default(false)
+  when:
+    - grafana_dashboards_use_rsync | default(false)
+    - (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.posix.synchronize:
     src: "{{ grafana_dashboards_repo_dir }}/"
     dest: "{{ grafana_dashboards_dir }}/"
     archive: true
     delete: true
 
-# Пермишены: сначала владельцы рекурсивно, затем корректные режимы
+# Пермишены полного дерева — только full-sync mode
 - name: Fix ownership for dashboards
   tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.file:
     path: "{{ grafana_dashboards_dir }}"
     state: directory
@@ -68,6 +150,7 @@
 
 - name: Gather dashboard directories
   tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.find:
     paths: "{{ grafana_dashboards_dir }}"
     file_type: directory
@@ -75,13 +158,15 @@
 
 - name: Chmod 0755 on dashboard dirs
   tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.file:
     path: "{{ item.path }}"
     mode: "0755"
-  loop: "{{ graf_dirs.files }}"
+  loop: "{{ graf_dirs.files | default([]) }}"
 
 - name: Gather dashboard files
   tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.find:
     paths: "{{ grafana_dashboards_dir }}"
     file_type: file
@@ -89,7 +174,8 @@
 
 - name: Chmod 0644 on dashboard files
   tags: [grafana_dashboards]
+  when: (grafana_dashboards_selected_files | default([])) | length == 0
   ansible.builtin.file:
     path: "{{ item.path }}"
     mode: "0644"
-  loop: "{{ graf_files.files }}"
+  loop: "{{ graf_files.files | default([]) }}"
