@@ -40,6 +40,7 @@
   register: sshcfg
   changed_when: false
   failed_when: false
+  check_mode: false
   tags: [reality_e2e]
 
 - name: Reality E2E | Build ssh_hostmap dict
@@ -72,8 +73,9 @@
     - (hostvars[item].reality.e2e_enabled | default(false)) | bool
   tags: [reality_e2e]
 
-# Готовим записи с вычисленным server_effective + shared_effective
-# shared_effective = reality_e2e_shared (group/hub) + hostvars[item].reality_e2e_shared (override per node)
+# Готовим записи с вычисленным server_effective.
+# Секреты (uuid/public_key/short_id) НЕ кладём в reality_e2e_nodes_eff —
+# их читают только secret-bearing task vars (см. eff_shared / _e2e_shared).
 - name: Reality E2E | Init effective nodes list
   ansible.builtin.set_fact:
     reality_e2e_nodes_eff: []
@@ -99,18 +101,11 @@
                     )
                 ),
 
-                'shared_effective': (
-                  (reality_e2e_shared | default({}))
-                  | combine((hostvars[item].reality_e2e_shared | default({})), recursive=True)
-                ),
-
                 'sni': (
                   hostvars[item].reality.sni
                   | default(
-                      (
-                        (reality_e2e_shared | default({}))
-                        | combine((hostvars[item].reality_e2e_shared | default({})), recursive=True)
-                      ).sni | default('')
+                      (hostvars[item].reality_e2e_shared | default({})).sni
+                      | default((reality_e2e_shared | default({})).sni | default(''))
                     )
                 ),
 
@@ -205,16 +200,24 @@
 - name: Reality E2E | Assert shared secrets are provided (effective per node)
   ansible.builtin.assert:
     that:
-      - item.reality.shared_effective.uuid | default('') | length > 0
-      - item.reality.shared_effective.public_key | default('') | length > 0
-      - item.reality.shared_effective.short_id | default('') | length > 0
+      - _e2e_shared.uuid | default('') | length > 0
+      - _e2e_shared.public_key | default('') | length > 0
+      - _e2e_shared.short_id | default('') | length > 0
     fail_msg: >-
       Node {{ item.name }}: reality_e2e_shared.{uuid, public_key, short_id} must be defined.
       Обычно: group_vars/hub/vault.yml.
       Override: host_vars/{{ item.host }}/vault.yml (reality_e2e_shared.*).
+    quiet: true
+  vars:
+    _e2e_shared: >-
+      {{
+        (reality_e2e_shared | default({}))
+        | combine((hostvars[item.host].reality_e2e_shared | default({})), recursive=True)
+      }}
   loop: "{{ reality_e2e_nodes_eff }}"
   loop_control:
     label: "{{ item.name }}"
+  no_log: true
   tags: [reality_e2e]
 
 # ---- Рендер профилей ---------------------------------------------------------
@@ -244,8 +247,13 @@
     eff_xhttp_path: "{{ item.reality.xhttp_path | default(reality_e2e_profile_defaults.xhttp.xhttp_path | default('/api/v1/sync/')) }}"
     eff_xhttp_mode: "{{ item.reality.xhttp_mode | default(reality_e2e_profile_defaults.xhttp.xhttp_mode | default('auto')) }}"
     eff_xhttp_tls: "{{ item.reality.xhttp_tls | default(reality_e2e_profile_defaults.xhttp.tls | default(true)) }}"
-    eff_shared: "{{ item.reality.shared_effective }}"
+    eff_shared: >-
+      {{
+        (reality_e2e_shared | default({}))
+        | combine((hostvars[item.host].reality_e2e_shared | default({})), recursive=True)
+      }}
     eff_fingerprint: "{{ item.reality.fingerprint | default('firefox') }}"
+  no_log: true
   tags: [reality_e2e]
 
 - name: Reality E2E | Render per-node ENV file
